@@ -1,0 +1,11 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Caveat:wght@600&display=swap');
+
+.script-font {
+    font-family: 'Caveat', cursive;
+}
+
+.wave-bottom {
+    border-top-left-radius: 40px;
+    border-top-right-radius: 40px;
+}

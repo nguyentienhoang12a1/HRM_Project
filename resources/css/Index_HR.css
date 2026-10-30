@@ -1,0 +1,23 @@
+
+body {
+    background-color: #f6f8fc;
+    color: #334155;
+}
+/* Smooth scroll & modern scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+.custom-gradient-bg {
+    background: linear-gradient(135deg, #eaf3ff 0%, #e0edff 50%, #ffffff 100%);
+    }
