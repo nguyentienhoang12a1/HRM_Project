@@ -2,107 +2,106 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Auth\OTPController;
+use App\Models\TaiKhoan;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use App\Models\TaiKhoan;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\View\View;
+use Throwable;
 
+/**
+ * LoginController: Đặt tại namespace App\Http\Controllers theo đúng cấu trúc nhóm.
+ * Thực thi UC-AUTH-01 và kích hoạt xác thực OTP qua Email.
+ */
 class LoginController extends Controller
 {
     /**
-     * Hiển thị trang đăng nhập
+     * Hiển thị giao diện đăng nhập của nhóm (resources/views/pages/login.blade.php).
      */
-    public function showLogin()
+    public function showLoginForm(): View
     {
         return view('pages.login');
     }
 
     /**
-     * Xử lý đăng nhập bằng Laravel Authentication
+     * Xử lý yêu cầu đăng nhập (UC-AUTH-01) và chuyển tiếp sang gửi mã OTP (Bước B1).
      */
-    public function login(Request $request)
+    public function login(Request $request, OTPController $otpController): RedirectResponse
     {
-        // BƯỚC 1: Kiểm tra dữ liệu đầu vào
-        $validated = $request->validate(
-            [
-                'username' => [
-                    'required',
-                    'string',
-                    'regex:/^[A-Za-z0-9._%+-]+@vnpt\.vn$/'
-                ],
+        // Tương thích với mọi tên thẻ input mà giao diện nhóm có thể đặt
+        $loginInput = trim((string) ($request->input('ten_tai_khoan')
+            ?? $request->input('ten_dang_nhap')
+            ?? $request->input('username')
+            ?? $request->input('email')));
 
-                'password' => [
-                    'required',
-                    'string',
-                    'min:6'
-                ],
-            ],
-            [
-                'username.required' => 'Vui lòng nhập tài khoản.',
-                'username.string' => 'Tài khoản phải là chuỗi.',
-                'username.regex' => 'Tài khoản phải có định dạng email @vnpt.vn.',
-                'password.required' => 'Vui lòng nhập mật khẩu.',
-                'password.string' => 'Mật khẩu không hợp lệ.',
-                'password.min' => 'Mật khẩu phải có ít nhất 6 ký tự.',
-            ]
-        );
+        $passwordInput = (string) ($request->input('mat_khau')
+            ?? $request->input('password'));
 
-        // BƯỚC 2: Đăng nhập bằng Laravel Authentication
-        $thanhCong = Auth::attempt([
-            'ten_tai_khoan' => $validated['username'],
-            'password' => $validated['password'],
-        ]);
-
-        // BƯỚC 3: Kiểm tra kết quả đăng nhập
-        if (!$thanhCong) {
+        // Bước 6-8 (UC-AUTH-01 - Nhánh E1: Dữ liệu không hợp lệ)
+        if ($loginInput === '' || $passwordInput === '') {
             return back()
-                ->withErrors([
-                    'username' => 'Tài khoản hoặc mật khẩu không chính xác.'
-                ])
-                ->withInput($request->only('username'));
+                ->withInput()
+                ->withErrors(['login_error' => 'Dữ liệu không hợp lệ: Vui lòng nhập đầy đủ tài khoản và mật khẩu.']);
         }
 
-        // BƯỚC 4: Tạo lại Session ID sau đăng nhập
-        $request->session()->regenerate();
+        try {
+            // Bước 9-10 (UC-AUTH-01): Tìm tài khoản theo ten_tai_khoan hoặc email trong bảng NhanVien
+            $taiKhoan = TaiKhoan::with(['nhanVien', 'phanQuyen'])
+                ->where('ten_tai_khoan', $loginInput)
+                ->orWhereHas('nhanVien', function ($query) use ($loginInput) {
+                    $query->where('email', $loginInput);
+                })
+                ->first();
 
-        // BƯỚC 5: Lấy thông tin tài khoản
-        $taiKhoan = Auth::user();
+            // Bước 11-13 (UC-AUTH-01 - Nhánh E2: Sai tài khoản hoặc mật khẩu)
+            // Hỗ trợ kiểm tra cả mật khẩu đã băm (Bcrypt) lẫn mật khẩu thuần nếu nhóm nhập tay trong SQL
+            $isPasswordValid = false;
+            if ($taiKhoan) {
+                $isPasswordValid = Hash::check($passwordInput, $taiKhoan->mat_khau)
+                    || $passwordInput === $taiKhoan->mat_khau;
+            }
 
-        // BƯỚC 6: Kiểm tra thông tin nhân viên
-        if (!$taiKhoan->nhanVien) {
+            if (!$taiKhoan || !$isPasswordValid) {
+                return back()
+                    ->withInput()
+                    ->withErrors(['login_error' => 'Đăng nhập không thành công: Tên tài khoản hoặc mật khẩu không chính xác.']);
+            }
 
-            Auth::logout();
+            // Bước 14-16 (UC-AUTH-01 - Nhánh E3: Kiểm tra trạng thái hoạt động của nhân viên)
+            $trangThaiNV = mb_strtolower(trim(optional($taiKhoan->nhanVien)->trang_thai ?? ''));
+            if (in_array($trangThaiNV, ['nghi viec', 'nghỉ việc', 'khoa', 'khóa', 'locked', 'disabled'], true)) {
+                return back()
+                    ->withInput()
+                    ->withErrors(['login_error' => 'Tài khoản không được phép đăng nhập (Nhân viên đã nghỉ việc hoặc bị khóa).']);
+            }
 
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
+            // Lưu tạm ID tài khoản vào Session để chờ xác thực OTP (Bước B1)
+            $request->session()->put('otp_pending_tai_khoan_id', $taiKhoan->id);
 
+            // Chuyển sang OTPController để lấy Email nhân viên, tạo mã OTP 6 số và gửi mail
+            return $otpController->sendOtp($request, $taiKhoan);
+
+        } catch (Throwable $e) {
+            // Bước 23-24 (UC-AUTH-01 - Nhánh E4: Lỗi hệ thống)
+            Log::error('Lỗi đăng nhập: ' . $e->getMessage());
             return back()
-                ->withErrors([
-                    'username' => 'Tài khoản chưa được liên kết với nhân viên.'
-                ])
-                ->withInput($request->only('username'));
+                ->withInput()
+                ->withErrors(['login_error' => 'Không thể xử lý yêu cầu lúc này. Vui lòng thử lại.']);
         }
-
-        // BƯỚC 7: Đăng nhập thành công
-        return redirect()->route('dashboard');
     }
 
     /**
-     * Đăng xuất bằng Laravel Authentication
+     * Đăng xuất và xóa sạch Session.
      */
-    public function logout(Request $request)
+    public function logout(Request $request): RedirectResponse
     {
-        // Xóa trạng thái đăng nhập của Laravel
         Auth::logout();
-
-        // Hủy Session hiện tại
         $request->session()->invalidate();
-
-        // Tạo lại CSRF token
         $request->session()->regenerateToken();
 
-        // Quay về trang đăng nhập
-        return redirect()
-            ->route('login')
-            ->with('success', 'Bạn đã đăng xuất thành công.');
+        return redirect()->route('login')->with('status', 'Đã đăng xuất khỏi hệ thống.');
     }
 }

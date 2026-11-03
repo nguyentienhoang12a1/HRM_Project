@@ -3,33 +3,30 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable([
-    'ma_chuc_vu',
-    'ten_chuc_vu'
-])]
 class ChucVu extends Model
 {
-    use HasFactory;
-
-    protected $table = 'chuc_vu';
-
+    protected $table = 'ChucVu';
     protected $primaryKey = 'ma_chuc_vu';
-
     public $incrementing = false;
-
     protected $keyType = 'string';
+    public $timestamps = false; 
 
-    // Một chức vụ có nhiều nhân viên
+    protected $fillable = [
+        'ma_chuc_vu',
+        'ten_chuc_vu',
+        'ma_phong',
+    ];
+
+    public function phongBan(): BelongsTo
+    {
+        return $this->belongsTo(PhongBan::class, 'ma_phong', 'ma_phong');
+    }
+
     public function nhanViens(): HasMany
     {
-        return $this->hasMany(
-            NhanVien::class,
-            'ma_chuc_vu',
-            'ma_chuc_vu'
-        );
+        return $this->hasMany(NhanVien::class, 'ma_chuc_vu', 'ma_chuc_vu');
     }
 }

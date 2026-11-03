@@ -2,30 +2,44 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
-    /**
-     * Seed the application's database.
-     */
-    public function run(): void
+    public function run()
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        $maQuyen = DB::table('PhanQuyen')->insertGetId([
+            'ten_quyen' => 'Quản trị viên',
+            'mo_ta' => 'Toàn quyền'
         ]);
 
-        $this->call([
-            ChucVuSeeder::class,
+        DB::table('PhongBan')->insert([
+            'ma_phong' => 'PB_IT',
+            'ten_phong' => 'Phòng IT',
+            'trang_thai' => 'Hoat dong'
         ]);
 
+        DB::table('ChucVu')->insert([
+            'ma_chuc_vu' => 'CV_TRUONGPHONG',
+            'ten_chuc_vu' => 'Trưởng phòng',
+            'ma_phong' => 'PB_IT'
+        ]);
 
+        DB::table('NhanVien')->insert([
+            'ma_nhan_vien' => 'NV_001',
+            'ho_va_ten' => 'Hữu Khang',
+            'email' => 'huukhang2k5@gmail.com',
+            'ma_chuc_vu' => 'CV_TRUONGPHONG',
+            'trang_thai' => 'Hoat dong' 
+        ]);
+
+        DB::table('TaiKhoan')->insert([
+            'ten_tai_khoan' => 'huukhang',
+            'mat_khau' => Hash::make('123456'), // Hash mật khẩu
+            'ma_nhan_vien' => 'NV_001', 
+            'ma_quyen' => $maQuyen
+        ]);
     }
 }

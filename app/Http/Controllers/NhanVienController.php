@@ -2,86 +2,269 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChucVu;
 use App\Models\NhanVien;
+use App\Models\PhanQuyen;
+use App\Models\TaiKhoan;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
+use Illuminate\View\View;
+use Throwable;
 
+/**
+ * NhanVienController: Quản lý hồ sơ Nhân viên (CRUD) tích hợp cấp phát Tài khoản & Phân quyền.
+ * Đồng bộ 100% với cấu trúc bảng NhanVien, TaiKhoan, ChucVu, PhanQuyen trong HRM.sql.
+ */
 class NhanVienController extends Controller
 {
-    // Hiển thị danh sách nhân viên
-    public function index()
+    /**
+     * Hiển thị danh sách nhân viên kèm tài khoản theo phạm vi dữ liệu (UC-ROLE-01).
+     */
+    public function index(Request $request): View
     {
-        $nhanViens = NhanVien::orderBy('ma_nhan_vien')->paginate(10);
+        // Sửa lỗi P1013: Truy vấn trực tiếp từ Model TaiKhoan theo Auth::id()
+        $currentUser = TaiKhoan::with(['nhanVien.chucVu', 'phanQuyen'])->findOrFail(Auth::id());
+        $scope = $currentUser->getDataScope();
 
-        return view('nhanvien.index', compact('nhanViens'));
+        $query = NhanVien::with(['chucVu.phongBan', 'taiKhoan.phanQuyen']);
+
+        // Lọc dữ liệu theo phạm vi quyền (Phần B - UC-ROLE-01)
+        if ($scope === 'department') {
+            $maPhong = optional(optional($currentUser->nhanVien)->chucVu)->ma_phong;
+            $query->whereHas('chucVu', function ($q) use ($maPhong) {
+                $q->where('ma_phong', $maPhong);
+            });
+        } elseif ($scope === 'personal') {
+            $query->where('ma_nhan_vien', $currentUser->ma_nhan_vien);
+        }
+
+        if ($request->filled('keyword')) {
+            $kw = trim($request->input('keyword'));
+            $query->where(function ($q) use ($kw) {
+                $q->where('ma_nhan_vien', 'like', "%{$kw}%")
+                  ->orWhere('ho_va_ten', 'like', "%{$kw}%")
+                  ->orWhere('email', 'like', "%{$kw}%");
+            });
+        }
+
+        $nhanViens = $query->orderBy('ma_nhan_vien', 'asc')->get();
+
+        return view('nhanvien.index', compact('nhanViens', 'scope'));
     }
 
-    // Hiển thị form thêm nhân viên
-    public function create()
+    /**
+     * Hiển thị biểu mẫu thêm mới Nhân viên & Tài khoản đăng nhập.
+     */
+    public function create(): View
     {
-        return view('nhanvien.create');
+        $chucVus = ChucVu::with('phongBan')->get();
+        $phanQuyens = PhanQuyen::orderBy('ma_quyen', 'asc')->get();
+
+        // Tự động gợi ý mã nhân viên tiếp theo (VD: NV006)
+        $count = NhanVien::count() + 1;
+        $suggestedCode = 'NV' . str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+        while (NhanVien::where('ma_nhan_vien', $suggestedCode)->exists()) {
+            $count++;
+            $suggestedCode = 'NV' . str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+        }
+
+        return view('nhanvien.create', compact('chucVus', 'phanQuyens', 'suggestedCode'));
     }
 
-    // Lưu nhân viên mới
-    public function store(Request $request)
+    /**
+     * Lưu hồ sơ Nhân viên mới đồng thời khởi tạo Tài khoản đăng nhập (Transaction).
+     */
+    public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'ma_nhan_vien' => 'required|string|max:20|unique:nhan_vien,ma_nhan_vien',
-            'ho_ten' => 'required|string|max:255',
-            'ngay_sinh' => 'nullable|date',
-            'que_quan' => 'nullable|string|max:255',
-            'email' => 'required|email|max:255|unique:nhan_vien,email',
-            'so_dien_thoai' => 'nullable|string|max:15',
-            'trang_thai' => 'required|in:Đang làm,Nghỉ,Thử việc',
-            'so_ngay_da_nghi' => 'required|integer|min:0',
-            'so_ngay_con_lai' => 'required|integer|min:0'
+            // Dữ liệu bảng NhanVien
+            'ma_nhan_vien'  => ['required', 'string', 'max:20', 'unique:NhanVien,ma_nhan_vien'],
+            'ho_va_ten'     => ['required', 'string', 'max:100'],
+            'email'         => ['required', 'email', 'max:100', 'unique:NhanVien,email'],
+            'so_dien_thoai' => ['nullable', 'string', 'max:15'],
+            'ngay_sinh'     => ['nullable', 'date'],
+            'que_quan'      => ['nullable', 'string', 'max:255'],
+            'ma_chuc_vu'    => ['required', 'string', 'exists:ChucVu,ma_chuc_vu'],
+            'trang_thai'    => ['required', 'string', 'max:30'],
+
+            // Dữ liệu bảng TaiKhoan
+            'ten_tai_khoan' => ['required', 'string', 'alpha_dash', 'min:3', 'max:50', 'unique:TaiKhoan,ten_tai_khoan'],
+            'mat_khau'      => ['required', 'string', 'min:6'],
+            'ma_quyen'      => ['required', 'integer', 'exists:PhanQuyen,ma_quyen'],
+        ], [
+            'ma_nhan_vien.required'  => 'Vui lòng nhập mã nhân viên.',
+            'ma_nhan_vien.unique'    => 'Mã nhân viên này đã tồn tại.',
+            'ho_va_ten.required'     => 'Vui lòng nhập họ và tên nhân viên.',
+            'email.required'         => 'Vui lòng nhập địa chỉ Email (dùng để nhận mã OTP).',
+            'email.email'            => 'Địa chỉ Email không hợp lệ.',
+            'email.unique'           => 'Địa chỉ Email này đã được gán cho nhân viên khác.',
+            'ma_chuc_vu.required'    => 'Vui lòng chọn chức vụ.',
+            'ten_tai_khoan.required' => 'Vui lòng nhập tên tài khoản đăng nhập.',
+            'ten_tai_khoan.unique'   => 'Tên tài khoản này đã tồn tại.',
+            'mat_khau.required'      => 'Vui lòng nhập mật khẩu khởi tạo.',
+            'mat_khau.min'           => 'Mật khẩu phải có ít nhất 6 ký tự.',
+            'ma_quyen.required'      => 'Vui lòng chọn quyền hệ thống.',
         ]);
 
-        NhanVien::create($validated);
+        DB::beginTransaction();
+        try {
+            // 1. Tạo bản ghi trong bảng NhanVien
+            NhanVien::create([
+                'ma_nhan_vien'  => trim($validated['ma_nhan_vien']),
+                'ho_va_ten'     => trim($validated['ho_va_ten']),
+                'email'         => trim($validated['email']),
+                'so_dien_thoai' => $validated['so_dien_thoai'] ?? null,
+                'ngay_sinh'     => $validated['ngay_sinh'] ?? null,
+                'que_quan'      => $validated['que_quan'] ?? null,
+                'ma_chuc_vu'    => $validated['ma_chuc_vu'],
+                'trang_thai'    => $validated['trang_thai'],
+            ]);
 
-        return redirect()
-            ->route('nhanvien.index')
-            ->with('success', 'Thêm nhân viên thành công!');
+            // 2. Tạo bản ghi trong bảng TaiKhoan liên kết qua cột ma_nhan_vien
+            TaiKhoan::create([
+                'ten_tai_khoan' => trim($validated['ten_tai_khoan']),
+                'mat_khau'      => Hash::make($validated['mat_khau']),
+                'ma_nhan_vien' => trim($validated['ma_nhan_vien']),
+                'ma_quyen'      => (int) $validated['ma_quyen'],
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('nhanvien.index')
+                ->with('success_message', "Đã thêm nhân viên [{$validated['ho_va_ten']}] và cấp tài khoản [{$validated['ten_tai_khoan']}] thành công!");
+        } catch (Throwable $e) {
+            DB::rollBack();
+            Log::error('Lỗi thêm mới nhân viên & tài khoản: ' . $e->getMessage());
+            return back()->withInput()->withErrors(['system_error' => 'Không thể lưu dữ liệu nhân viên. Vui lòng kiểm tra lại.']);
+        }
     }
 
-    // Hiển thị form sửa nhân viên
-    public function edit(string $id)
+    /**
+     * Hiển thị biểu mẫu chỉnh sửa Nhân viên & Tài khoản.
+     */
+    public function edit(string $ma_nhan_vien): View
     {
-        $nhanVien = NhanVien::findOrFail($id);
+        $nhanVien = NhanVien::with('taiKhoan')->findOrFail($ma_nhan_vien);
+        $chucVus = ChucVu::with('phongBan')->get();
+        $phanQuyens = PhanQuyen::orderBy('ma_quyen', 'asc')->get();
 
-        return view('nhanvien.edit', compact('nhanVien'));
+        return view('nhanvien.edit', compact('nhanVien', 'chucVus', 'phanQuyens'));
     }
 
-    // Cập nhật thông tin nhân viên
-    public function update(Request $request, string $id)
+    /**
+     * Cập nhật hồ sơ Nhân viên (bao gồm Email nhận OTP) và thông tin Tài khoản.
+     */
+    public function update(Request $request, string $ma_nhan_vien): RedirectResponse
     {
-        $nhanVien = NhanVien::findOrFail($id);
+        $nhanVien = NhanVien::with('taiKhoan')->findOrFail($ma_nhan_vien);
+        $taiKhoanId = optional($nhanVien->taiKhoan)->id;
 
         $validated = $request->validate([
-            'ho_ten' => 'required|string|max:255',
-            'ngay_sinh' => 'nullable|date',
-            'que_quan' => 'nullable|string|max:255',
-            'email' => 'required|email|max:255|unique:nhan_vien,email,' . $nhanVien->ma_nhan_vien . ',ma_nhan_vien',
-            'so_dien_thoai' => 'nullable|string|max:15',
-            'trang_thai' => 'required|in:Đang làm,Nghỉ,Thử việc',
-            'so_ngay_da_nghi' => 'required|integer|min:0',
-            'so_ngay_con_lai' => 'required|integer|min:0'
+            'ho_va_ten'     => ['required', 'string', 'max:100'],
+            'email'         => [
+                'required',
+                'email',
+                'max:100',
+                Rule::unique('NhanVien', 'email')->ignore($nhanVien->ma_nhan_vien, 'ma_nhan_vien'),
+            ],
+            'so_dien_thoai' => ['nullable', 'string', 'max:15'],
+            'ngay_sinh'     => ['nullable', 'date'],
+            'que_quan'      => ['nullable', 'string', 'max:255'],
+            'ma_chuc_vu'    => ['required', 'string', 'exists:ChucVu,ma_chuc_vu'],
+            'trang_thai'    => ['required', 'string', 'max:30'],
+
+            'ten_tai_khoan' => [
+                'required',
+                'string',
+                'alpha_dash',
+                'max:50',
+                Rule::unique('TaiKhoan', 'ten_tai_khoan')->ignore($taiKhoanId, 'id'),
+            ],
+            'mat_khau_moi'  => ['nullable', 'string', 'min:6'],
+            'ma_quyen'      => ['required', 'integer', 'exists:PhanQuyen,ma_quyen'],
+        ], [
+            'email.required'       => 'Địa chỉ Email không được để trống vì dùng để nhận mã OTP.',
+            'email.unique'         => 'Địa chỉ Email này đã thuộc về nhân viên khác.',
+            'ten_tai_khoan.unique' => 'Tên tài khoản này đã tồn tại.',
         ]);
 
-        $nhanVien->update($validated);
+        DB::beginTransaction();
+        try {
+            // 1. Cập nhật bảng NhanVien
+            $nhanVien->update([
+                'ho_va_ten'     => trim($validated['ho_va_ten']),
+                'email'         => trim($validated['email']),
+                'so_dien_thoai' => $validated['so_dien_thoai'] ?? null,
+                'ngay_sinh'     => $validated['ngay_sinh'] ?? null,
+                'que_quan'      => $validated['que_quan'] ?? null,
+                'ma_chuc_vu'    => $validated['ma_chuc_vu'],
+                'trang_thai'    => $validated['trang_thai'],
+            ]);
 
-        return redirect()
-            ->route('nhanvien.index')
-            ->with('success', 'Cập nhật nhân viên thành công!');
+            // 2. Cập nhật hoặc khởi tạo tài khoản trong bảng TaiKhoan
+            $accountData = [
+                'ten_tai_khoan' => trim($validated['ten_tai_khoan']),
+                'ma_quyen'      => (int) $validated['ma_quyen'],
+            ];
+
+            if (!empty($validated['mat_khau_moi'])) {
+                $accountData['mat_khau'] = Hash::make($validated['mat_khau_moi']);
+            }
+
+            if ($nhanVien->taiKhoan) {
+                $nhanVien->taiKhoan->update($accountData);
+            } else {
+                $accountData['ma_nhan_vien'] = $nhanVien->ma_nhan_vien;
+                $accountData['mat_khau'] = $accountData['mat_khau'] ?? Hash::make('Admin@123');
+                TaiKhoan::create($accountData);
+            }
+
+            DB::commit();
+
+            return redirect()->route('nhanvien.index')
+                ->with('success_message', "Cập nhật thông tin nhân viên [{$nhanVien->ma_nhan_vien}] thành công!");
+        } catch (Throwable $e) {
+            DB::rollBack();
+            Log::error('Lỗi cập nhật nhân viên: ' . $e->getMessage());
+            return back()->withInput()->withErrors(['system_error' => 'Không thể cập nhật thông tin nhân viên.']);
+        }
     }
 
-    // Xóa nhân viên
-    public function destroy(string $id)
+    /**
+     * Xóa nhân viên và tài khoản liên kết.
+     */
+    public function destroy(string $ma_nhan_vien): RedirectResponse
     {
-        $nhanVien = NhanVien::findOrFail($id);
-        $nhanVien->delete();
+        $currentUser = TaiKhoan::findOrFail(Auth::id());
 
-        return redirect()
-            ->route('nhanvien.index')
-            ->with('success', 'Xóa nhân viên thành công!');
+        if ($currentUser->ma_nhan_vien === $ma_nhan_vien) {
+            return back()->withErrors(['delete_error' => 'Bạn không thể tự xóa hồ sơ của chính mình khi đang đăng nhập.']);
+        }
+
+        DB::beginTransaction();
+        try {
+            $nhanVien = NhanVien::with('taiKhoan')->findOrFail($ma_nhan_vien);
+
+            if ($nhanVien->taiKhoan) {
+                // Xóa các mã OTP cũ trước khi xóa tài khoản để không vướng khóa ngoại MaOTP
+                $nhanVien->taiKhoan->maOtps()->delete();
+                $nhanVien->taiKhoan->delete();
+            }
+
+            $nhanVien->delete();
+            DB::commit();
+
+            return redirect()->route('nhanvien.index')
+                ->with('success_message', "Đã xóa nhân viên [{$ma_nhan_vien}] và tài khoản liên kết.");
+        } catch (Throwable $e) {
+            DB::rollBack();
+            Log::error('Lỗi xóa nhân viên: ' . $e->getMessage());
+            return back()->withErrors(['delete_error' => 'Không thể xóa nhân viên này do đang có dữ liệu Hợp đồng/Chấm công/Lương liên kết.']);
+        }
     }
 }
