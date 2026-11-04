@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\OTPController;
 use App\Http\Controllers\Auth\PasswordController;
+use App\Http\Controllers\ChamCongController; // <-- 1. IMPORT CONTROLLER CHẤM CÔNG
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\NhanVienController;
 use Illuminate\Support\Facades\Auth;
@@ -48,15 +49,15 @@ Route::middleware(['permission.scope'])->group(function () {
 
     // Điều hướng Dashboard về đúng 5 trang giao diện theo vai trò của nhóm
     Route::get('/dashboard', function () {
-    $user = \App\Models\TaiKhoan::with('phanQuyen')->findOrFail(\Illuminate\Support\Facades\Auth::id());
-    return match ($user->getRoleKey()) {
-        'admin'       => redirect()->route('pages.admin'),
-        'giamdoc'     => redirect()->route('pages.giamdoc'),
-        'hr'          => redirect()->route('pages.hr'),
-        'truongphong' => redirect()->route('pages.truongphong'),
-        default       => redirect()->route('pages.nhanvien'),
-    };
-})->name('dashboard');
+        $user = \App\Models\TaiKhoan::with('phanQuyen')->findOrFail(\Illuminate\Support\Facades\Auth::id());
+        return match ($user->getRoleKey()) {
+            'admin'       => redirect()->route('pages.admin'),
+            'giamdoc'     => redirect()->route('pages.giamdoc'),
+            'hr'          => redirect()->route('pages.hr'),
+            'truongphong' => redirect()->route('pages.truongphong'),
+            default       => redirect()->route('pages.nhanvien'),
+        };
+    })->name('dashboard');
 
     // 5 Trang chủ theo vai trò trong resources/views/pages/ của nhóm
     Route::get('/admin/home', fn() => view('pages.Index_Admin'))->name('pages.admin')->middleware('permission.scope:admin');
@@ -79,4 +80,21 @@ Route::middleware(['permission.scope'])->group(function () {
         Route::get('/roles', [RoleController::class, 'index'])->name('roles.index');
         Route::put('/roles/{id}', [RoleController::class, 'update'])->name('roles.update');
     });
+
+    /*
+    |--------------------------------------------------------------------------
+    | 2. BỔ SUNG: CHẤM CÔNG FACEID & LỊCH SỬ CHẤM CÔNG
+    |--------------------------------------------------------------------------
+    */
+    // Giao diện máy quét Camera FaceID
+    Route::get('/cham-cong', [ChamCongController::class, 'index'])->name('chamcong.index');
+
+    // API trả về danh sách khuôn mặt dạng JSON cho Face API JS
+    Route::get('/face-database', [ChamCongController::class, 'getFaceDatabase'])->name('chamcong.facedata');
+
+    // API lưu Check-in / Check-out vào CSDL
+    Route::post('/luu-cham-cong', [ChamCongController::class, 'luuChamCong'])->name('chamcong.luu');
+
+    // Trang xem bảng lịch sử chấm công
+    Route::get('/lich-su-cham-cong', [ChamCongController::class, 'lichSuChamCong'])->name('chamcong.lich_su');
 });

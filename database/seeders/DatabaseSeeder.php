@@ -29,14 +29,14 @@ class DatabaseSeeder extends Seeder
 
         DB::table('NhanVien')->insert([
             'ma_nhan_vien' => 'NV_001',
-            'ho_va_ten' => 'Hữu Khang',
-            'email' => 'huukhang2k5@gmail.com',
+            'ho_va_ten' => 'Công Hiếu',
+            'email' => 'hieudc205@gmail.com',
             'ma_chuc_vu' => 'CV_TRUONGPHONG',
             'trang_thai' => 'Hoat dong' 
         ]);
 
         DB::table('TaiKhoan')->insert([
-            'ten_tai_khoan' => 'huukhang',
+            'ten_tai_khoan' => 'conghieu',
             'mat_khau' => Hash::make('123456'), // Hash mật khẩu
             'ma_nhan_vien' => 'NV_001', 
             'ma_quyen' => $maQuyen

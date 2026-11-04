@@ -19,6 +19,9 @@ return new class extends Migration
                 $table->string('ma_chuc_vu', 20);
                 $table->string('trang_thai', 30)->default('Thu viec');
 
+                // Thêm trực tiếp cột face_vector vào đây
+                $table->json('face_vector')->nullable();
+
                 $table->foreign('ma_chuc_vu')->references('ma_chuc_vu')->on('ChucVu')->cascadeOnDelete();
             });
         }
