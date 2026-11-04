@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Đăng ký FaceID - {{ $nhanVien->ho_ten }}</title>
+    <title>Đăng ký FaceID - {{ $nhanVien->ho_va_ten ?? $nhanVien->ho_ten }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Dùng bản JS đã fix lỗi tensor shape -->
     <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
@@ -17,13 +17,13 @@
         <div>
             <h1 class="text-2xl font-bold text-slate-800">Đăng Ký FaceID</h1>
             <p class="text-slate-500 mt-1">Nhân viên: <span
-                    class="font-semibold text-blue-600">{{ $nhanVien->ho_ten }}</span> ({{ $nhanVien->ma_nhan_vien }})
+                    class="font-semibold text-blue-600">{{ $nhanVien->ho_va_ten ?? $nhanVien->ho_ten }}</span> ({{ $nhanVien->ma_nhan_vien }})
             </p>
         </div>
 
         <div
             class="relative w-full aspect-[4/3] bg-black rounded-xl overflow-hidden flex items-center justify-center border-2 border-slate-200 shadow-inner">
-            <video id="video" autoplay muted class="w-full h-full object-cover"></video>
+            <video id="video" autoplay muted playsinline class="w-full h-full object-cover"></video>
             <div id="overlay-status"
                 class="absolute inset-0 bg-black/60 flex items-center justify-center text-white font-medium p-4 text-center">
                 Đang kiểm tra thư viện AI...
@@ -45,6 +45,9 @@
         const statusText = document.getElementById('status-text');
         const btnCapture = document.getElementById('btn-capture');
 
+        // Tạo URL động chính xác theo route nhanvien.save_face trong web.php
+        const saveFaceUrl = "{{ route('nhanvien.save_face', $nhanVien->ma_nhan_vien) }}";
+
         async function initSystem() {
             try {
                 if (typeof faceapi === 'undefined') {
@@ -55,7 +58,6 @@
                 overlayStatus.innerText = "Đang nạp AI Models...";
                 statusText.innerText = "Đang nạp mô hình nhận diện...";
 
-                // Nạp trực tiếp bộ weights chuẩn từ CDN JsDelivr
                 const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model';
 
                 await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
@@ -105,29 +107,36 @@
 
             const faceVector = Array.from(detection.descriptor);
 
-            fetch(`/nhan-vien/${maNhanVien}/update-face-vector`, {
+            fetch(saveFaceUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
                     },
                     body: JSON.stringify({
                         face_vector: faceVector
                     })
                 })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
+                .then(async res => {
+                    const data = await res.json();
+                    if (res.ok && data.success) {
                         statusText.className = "text-sm font-bold text-emerald-600";
                         statusText.innerText = "🎉 Đăng ký FaceID thành công!";
                         alert("Đã lưu dữ liệu khuôn mặt thành công!");
+                        setTimeout(() => {
+                            window.location.href = "{{ route('nhanvien.index') }}";
+                        }, 1500);
                     } else {
-                        statusText.innerText = "❌ Có lỗi xảy ra khi lưu dữ liệu.";
+                        statusText.className = "text-sm font-medium text-red-600";
+                        statusText.innerText = `❌ ${data.message || 'Có lỗi xảy ra khi lưu dữ liệu.'}`;
                         btnCapture.disabled = false;
                     }
                 })
-                .catch(() => {
-                    statusText.innerText = "❌ Lỗi kết nối Server!";
+                .catch(err => {
+                    console.error("Lỗi Fetch:", err);
+                    statusText.className = "text-sm font-medium text-red-600";
+                    statusText.innerText = "❌ Lỗi kết nối Server! Kiểm tra lại Console (F12).";
                     btnCapture.disabled = false;
                 });
         }
