@@ -11,7 +11,7 @@ return new class extends Migration
         if (!Schema::hasTable('MaOTP')) {
             Schema::create('MaOTP', function (Blueprint $table) {
                 $table->integer('id', true); // int PRIMARY KEY AUTO_INCREMENT
-                $table->integer('tai_khoan_id');
+                $table->unsignedBigInteger('tai_khoan_id');
                 $table->string('ma_otp', 6);
                 $table->dateTime('thoi_gian_tao')->useCurrent();
                 $table->dateTime('thoi_gian_het_han')->nullable();

@@ -16,13 +16,13 @@ class ChucVu extends Model
 
     protected $fillable = [
         'ma_chuc_vu',
-        'ten_chuc_vu',
-        'ma_phong',
+        'ten_chuc_vu'
     ];
 
-    public function phongBan(): BelongsTo
+    // một chức vụ có nhiều phong ban chuc vu
+    public function phongBanChucVus(): HasMany
     {
-        return $this->belongsTo(PhongBan::class, 'ma_phong', 'ma_phong');
+        return $this->hasMany(PhongBanChucVu::class, 'ma_chuc_vu', 'ma_chuc_vu');
     }
 
     public function nhanViens(): HasMany

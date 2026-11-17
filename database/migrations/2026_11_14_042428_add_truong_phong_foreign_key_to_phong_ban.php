@@ -1,0 +1,29 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('PhongBan', function (Blueprint $table) {
+            $table->foreign('ma_truong_phong')
+                ->references('ma_nhan_vien')
+                ->on('NhanVien')
+                ->cascadeOnUpdate()
+                ->nullOnDelete();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('PhongBan', function (Blueprint $table) {
+            $table->dropForeign(['ma_truong_phong']);
+        });
+    }
+};

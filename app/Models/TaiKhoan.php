@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -14,6 +15,8 @@ class TaiKhoan extends Authenticatable
 
     protected $table = 'TaiKhoan';
     protected $primaryKey = 'id';
+    public $incrementing = true;
+    protected $keyType = 'int';
     public $timestamps = false; 
     protected $authPasswordName = 'mat_khau';
 
@@ -21,7 +24,7 @@ class TaiKhoan extends Authenticatable
         'ten_tai_khoan',
         'mat_khau',
         'ma_nhan_vien',
-        'ma_quyen',
+        'trang_thai',
     ];
 
     protected $hidden = [
@@ -37,6 +40,13 @@ class TaiKhoan extends Authenticatable
     {
         return $this->mat_khau;
     }
+    protected function casts(): array
+    {
+        return [
+            'mat_khau' => 'hashed',
+            'trang_thai' => 'boolean',
+        ];
+    }
 
     /**
      * Liên kết tới bảng NhanVien qua cột ma_nhan_vien.
@@ -46,12 +56,26 @@ class TaiKhoan extends Authenticatable
         return $this->belongsTo(NhanVien::class, 'ma_nhan_vien', 'ma_nhan_vien');
     }
 
-    /**
-     * Liên kết tới bảng PhanQuyen qua cột ma_quyen.
-     */
-    public function phanQuyen(): BelongsTo
+    // Một tài khoản có nhiều nhật ký hệ thống
+    public function nhatKyHeThongs(): HasMany
     {
-        return $this->belongsTo(PhanQuyen::class, 'ma_quyen', 'ma_quyen');
+        return $this->hasMany(
+            NhatKyHeThong::class,
+            'nguoi_thuc_hien_id',
+            'id'
+        );
+    }
+    // Một tài khoản có nhiều vai trò
+    public function vaiTros(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            VaiTro::class,
+            'TaiKhoanVaiTro',
+            'tai_khoan_id',
+            'ma_vai_tro',
+            'id',
+            'ma_vai_tro'
+        )->withPivot('id');
     }
 
     public function maOtps(): HasMany
@@ -67,34 +91,6 @@ class TaiKhoan extends Authenticatable
         return $this->ten_tai_khoan;
     }
 
-
-    /**
-     * Chuẩn hóa tên quyền từ bảng PhanQuyen về mã vai trò chuẩn.
-     */
-    public function getRoleKey(): string
-    {
-        $tenQuyen = mb_strtolower(trim(optional($this->phanQuyen)->ten_quyen ?? ''));
-
-        return match (true) {
-            str_contains($tenQuyen, 'admin') || str_contains($tenQuyen, 'quản trị') || $this->ma_quyen == 1 => 'admin',
-            str_contains($tenQuyen, 'giám đốc') || str_contains($tenQuyen, 'giam doc') || $this->ma_quyen == 2 => 'giamdoc',
-            str_contains($tenQuyen, 'hr') || str_contains($tenQuyen, 'nhân sự') || $this->ma_quyen == 3 => 'hr',
-            str_contains($tenQuyen, 'trưởng phòng') || str_contains($tenQuyen, 'truong phong') || $this->ma_quyen == 4 => 'truongphong',
-            default => 'nhanvien',
-        };
-    }
-
-    /**
-     * Xác định phạm vi dữ liệu dựa trên vai trò.
-     */
-    public function getDataScope(): string
-    {
-        return match ($this->getRoleKey()) {
-            'admin', 'giamdoc', 'hr' => 'all',
-            'truongphong'            => 'department',
-            default                  => 'personal',
-        };
-    }
 
     public function isAdmin(): bool
     {
