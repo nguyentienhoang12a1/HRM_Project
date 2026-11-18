@@ -118,33 +118,73 @@ class OTPController extends Controller
         $otpRecord->update(['da_su_dung' => true]);
 
         // Bước B12: Khởi tạo Session đăng nhập và điều hướng theo vai trò tài khoản
-        $taiKhoan = TaiKhoan::with(['nhanVien.chucVu.phongBan', 'phanQuyen'])->findOrFail($taiKhoanId);
+        $taiKhoan = TaiKhoan::with(['vaiTros.chucNangs', 'nhanVien'])->findOrFail($taiKhoanId);
         Auth::login($taiKhoan);
 
         $request->session()->forget('otp_pending_tai_khoan_id');
         $request->session()->regenerate();
 
         // Lưu đầy đủ các biến Session cho cả hệ thống của nhóm và Middleware Timeout 10 phút
-        $roleKey = $taiKhoan->getRoleKey();
+        $roleKeys = $taiKhoan->vaiTros
+            ->pluck('ma_vai_tro')
+            ->toArray();
+        // Danh sách chức năng được thực hiện
+        $user_permissions = $taiKhoan->vaiTros
+            ->flatMap(fn ($vaiTro) => $vaiTro->chucNangs)
+            ->filter(fn ($chucNang) => $chucNang->pivot->duoc_thuc_hien)
+            ->pluck('ma_chuc_nang')
+            ->unique()
+            ->values()
+            ->toArray();
+
+        // Danh sách phạm vi theo từng chức năng
+        $user_scope = $taiKhoan->vaiTros
+            ->flatMap(fn ($vaiTro) => $vaiTro->chucNangs)
+            ->filter(fn ($chucNang) => $chucNang->pivot->duoc_thuc_hien)
+            ->map(fn ($chucNang) => [
+                'ma_chuc_nang' => $chucNang->ma_chuc_nang,
+                'ma_pham_vi' => $chucNang->pivot->ma_pham_vi,
+            ])
+            ->values()
+            ->toArray();
+
         $request->session()->put([
-            'tai_khoan_id'            => $taiKhoan->id,
-            'ten_tai_khoan'           => $taiKhoan->ten_tai_khoan,
-            'ma_nhan_vien'            => $taiKhoan->ma_nhan_vien,
-            'ho_va_ten'               => optional($taiKhoan->nhanVien)->ho_va_ten,
-            'ma_quyen'                => $taiKhoan->ma_quyen,
-            'ten_quyen'               => optional($taiKhoan->phanQuyen)->ten_quyen,
-            'user_role'               => $roleKey,
-            'user_scope'              => $taiKhoan->getDataScope(),
+            // Thông tin tài khoản
+            'tai_khoan_id' => $taiKhoan->id,
+            'ten_tai_khoan' => $taiKhoan->ten_tai_khoan,
+            'ma_nhan_vien' => $taiKhoan->ma_nhan_vien,
+            'ho_va_ten' => optional($taiKhoan->nhanVien)->ho_va_ten,
+
+            // Danh sách vai trò
+            'user_roles' => $roleKeys,
+
+            // Danh sách quyền chức năng
+            'user_permissions' => $user_permissions,
+
+            // Phạm vi dữ liệu theo từng chức năng
+            'user_scope' => $user_scope,
+
+            // Thời gian hoạt động
             'last_activity_timestamp' => time(),
         ]);
+        //  ưu tiên vai trò cao nhất khi tài khoản có nhiều vai trò, bạn có thể dùng:
+        $roleKeys = session('user_roles', []);
 
-        // Điều hướng về đúng 5 trang Index theo vai trò mà nhóm đã dựng trong resources/views/pages/
-        return match ($roleKey) {
-            'admin'       => redirect()->route('pages.admin')->with('status', 'Đăng nhập Quản trị viên thành công!'),
-            'giamdoc'     => redirect()->route('pages.giamdoc')->with('status', 'Chào mừng Ban Giám Đốc!'),
-            'hr'          => redirect()->route('pages.hr')->with('status', 'Chào mừng bộ phận Nhân sự (HR)!'),
-            'truongphong' => redirect()->route('pages.truongphong')->with('status', 'Chào mừng Trưởng phòng!'),
-            default       => redirect()->route('pages.nhanvien')->with('status', 'Đăng nhập thành công!'),
+        return match (true) {
+            in_array('VT_Admin', $roleKeys)       => redirect()->route('pages.admin')
+                ->with('status', 'Đăng nhập Quản trị viên thành công!'),
+
+            in_array('VT_GiamDoc', $roleKeys)     => redirect()->route('pages.giamdoc')
+                ->with('status', 'Chào mừng Ban Giám Đốc!'),
+
+            in_array('VT_HR', $roleKeys)          => redirect()->route('pages.hr')
+                ->with('status', 'Chào mừng bộ phận Nhân sự (HR)!'),
+
+            in_array('VT_TruongPhong', $roleKeys) => redirect()->route('pages.truongphong')
+                ->with('status', 'Chào mừng Trưởng phòng!'),
+
+            default => redirect()->route('pages.nhanvien')
+                ->with('status', 'Đăng nhập thành công!'),
         };
     }
 

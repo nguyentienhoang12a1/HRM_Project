@@ -38,21 +38,65 @@ class CheckPermissionAndScope
                 ->withErrors(['auth_error' => 'Tài khoản không được phép đăng nhập (Nhân viên đã nghỉ việc hoặc bị khóa).']);
         }
 
-        // SỬA LỖI 2: Sử dụng hàm getRoleKey() thay vì hasPermission()
-        // Kiểm tra xem user có quyền admin, hoặc có vai trò khớp với $requiredPermission không
+        
+        // Kiểm tra quyền truy cập chức năng
+        
         if ($requiredPermission !== null) {
-            $userRole = $user->getRoleKey();
-            
-            // Nếu không phải là admin VÀ không khớp với quyền được yêu cầu -> chặn lại
-            if ($userRole !== 'admin' && $userRole !== $requiredPermission) {
+
+            // ==========================================
+            // 1. LẤY DANH SÁCH VAI TRÒ VÀ CHỨC NĂNG
+            // ==========================================
+
+            $userRoles = session('user_roles', []);
+            $userPermissions = session('user_permissions', []);
+
+            $userRoles = is_array($userRoles) ? $userRoles : [];
+            $userPermissions = is_array($userPermissions) ? $userPermissions : [];
+
+            // ==========================================
+            // 2. KIỂM TRA TÀI KHOẢN CÓ VAI TRÒ HỢP LỆ
+            // ==========================================
+
+            $validRoles = [
+                'VT_Admin',
+                'VT_HR',
+                'VT_GiamDoc',
+                'VT_NhanVien',
+                'VT_TruongPhong',
+            ];
+
+            $hasValidRole = !empty(array_intersect($userRoles, $validRoles));
+
+            // ==========================================
+            // 3. KIỂM TRA QUYỀN CHỨC NĂNG
+            // ==========================================
+
+            $hasPermission = in_array(
+                $requiredPermission,
+                $userPermissions,
+                true
+            );
+
+            // ==========================================
+            // 4. KIỂM TRA QUYỀN TRUY CẬP
+            // ==========================================
+
+            // Tất cả vai trò đều phải có quyền chức năng
+            if (!$hasValidRole || !$hasPermission) {
+
                 if ($request->expectsJson()) {
-                    return response()->json(['message' => 'Mã lỗi 403: Không đủ quyền truy cập tài nguyên.'], 403);
+                    return response()->json([
+                        'message' => 'Mã lỗi 403: Không đủ quyền truy cập tài nguyên.'
+                    ], 403);
                 }
+
                 return response()->view('errors.403', [
                     'message' => 'Mã lỗi 403: Bạn không có quyền thực hiện thao tác hoặc truy cập chức năng này.'
                 ], 403);
             }
         }
+
+
 
         return $next($request);
     }

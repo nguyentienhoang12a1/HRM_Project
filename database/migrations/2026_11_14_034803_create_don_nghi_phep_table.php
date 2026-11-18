@@ -12,7 +12,7 @@ return new class extends Migration
         Schema::create('DonNghiPhep', function (Blueprint $table) {
             $table->id();
 
-            $table->string('ma_nhan_vien', 50);
+            $table->string('ma_nhan_vien', 20)->nullable();
 
             $table->date('ngay_bat_dau');
             $table->date('ngay_ket_thuc');

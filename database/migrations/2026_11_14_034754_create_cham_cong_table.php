@@ -12,7 +12,7 @@ return new class extends Migration
         Schema::create('ChamCong', function (Blueprint $table) {
             $table->increments('id');
 
-            $table->string('ma_nhan_vien', 20);
+            $table->string('ma_nhan_vien', 20)->nullable();
 
             $table->integer('thang');
             $table->integer('nam');

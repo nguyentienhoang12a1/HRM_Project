@@ -66,7 +66,7 @@ class TaiKhoan extends Authenticatable
         );
     }
     // Một tài khoản có nhiều vai trò
-    public function vaiTros(): BelongsToMany
+    public function vaiTros (): BelongsToMany
     {
         return $this->belongsToMany(
             VaiTro::class,

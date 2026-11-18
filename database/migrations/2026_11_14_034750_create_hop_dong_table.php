@@ -18,7 +18,7 @@ return new class extends Migration
 
             $table->decimal('muc_luong', 15, 2)->default(0);
 
-            $table->string('ma_nhan_vien', 50);
+            $table->string('ma_nhan_vien', 20)->nullable();
 
             $table->foreign('ma_nhan_vien')
                 ->references('ma_nhan_vien')

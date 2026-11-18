@@ -16,11 +16,18 @@ class DatabaseSeeder extends Seeder
             VaiTroSeeder::class,
             ChucNangSeeder::class,
             PhamViQuyenSeeder::class,
+
+            ViTriCongViecSeeder::class,
+            PhongBanChucVuSeeder::class,
+
+            // Tạo nhân viên trước
+            NhanVienSeeder::class,
+
+            // Sau đó mới tạo tài khoản
             TaiKhoanSeeder::class,
             TaiKhoanVaiTroSeeder::class,
             VaiTroChucNangSeeder::class,
-            ViTriCongViecSeeder::class,
-            PhongBanChucVuSeeder::class,
+            
         ]);
     }
 }

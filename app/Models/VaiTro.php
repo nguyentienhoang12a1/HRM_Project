@@ -17,9 +17,13 @@ class VaiTro extends Model
     use HasFactory;
 
     protected $table = 'VaiTro';
+
     protected $primaryKey = 'ma_vai_tro';
+
     public $incrementing = false;
+
     protected $keyType = 'string';
+
     public $timestamps = false;
 
     protected function casts(): array
@@ -55,11 +59,7 @@ class VaiTro extends Model
         )->withPivot([
             'id',
             'ma_pham_vi',
-            'duoc_xem',
-            'duoc_them',
-            'duoc_sua',
-            'duoc_xoa',
-            'duoc_duyet'
+            'duoc_thuc_hien',
         ]);
     }
 }

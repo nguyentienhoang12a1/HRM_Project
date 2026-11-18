@@ -64,7 +64,7 @@ return new class extends Migration
 
             // Thông tin liên hệ
             $table->string('so_dien_thoai_co_quan', 20)->nullable();
-            $table->string('email', 100)->unique();
+            $table->string('email', 100);
 
             $table->string('lien_he_khan_1_ten', 255)->nullable();
             $table->string('lien_he_khan_1_dien_thoai', 20)->nullable();

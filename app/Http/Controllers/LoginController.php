@@ -48,14 +48,24 @@ class LoginController extends Controller
         }
 
         try {
+            
             // Bước 9-10 (UC-AUTH-01): Tìm tài khoản theo ten_tai_khoan hoặc email trong bảng NhanVien
-            $taiKhoan = TaiKhoan::with(['nhanVien', 'phanQuyen'])
-                ->where('ten_tai_khoan', $loginInput)
-                ->orWhereHas('nhanVien', function ($query) use ($loginInput) {
-                    $query->where('email', $loginInput);
+            $taiKhoan = TaiKhoan::with([
+                    'nhanVien',
+                    'vaiTros'
+                ])
+                ->where(function ($query) use ($loginInput) {
+                    $query->where('ten_tai_khoan', $loginInput)
+                        ->orWhereHas('nhanVien', function ($q) use ($loginInput) {
+                            $q->where('email', $loginInput);
+                        });
                 })
+                ->where('trang_thai', true)
                 ->first();
 
+            $maVaiTro = $taiKhoan->vaiTros
+                ->pluck('ma_vai_tro')
+                ->toArray();
             // Bước 11-13 (UC-AUTH-01 - Nhánh E2: Sai tài khoản hoặc mật khẩu)
             // Hỗ trợ kiểm tra cả mật khẩu đã băm (Bcrypt) lẫn mật khẩu thuần nếu nhóm nhập tay trong SQL
             $isPasswordValid = false;
@@ -71,7 +81,7 @@ class LoginController extends Controller
             }
 
             // Bước 14-16 (UC-AUTH-01 - Nhánh E3: Kiểm tra trạng thái hoạt động của nhân viên)
-            $trangThaiNV = mb_strtolower(trim(optional($taiKhoan->nhanVien)->trang_thai ?? ''));
+            $trangThaiNV = mb_strtolower(trim(optional($taiKhoan->nhanVien)->trang_thai_nhan_vien ?? ''));
             if (in_array($trangThaiNV, ['nghi viec', 'nghỉ việc', 'khoa', 'khóa', 'locked', 'disabled'], true)) {
                 return back()
                     ->withInput()

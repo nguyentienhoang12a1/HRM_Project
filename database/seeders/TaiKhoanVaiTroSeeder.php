@@ -10,49 +10,40 @@ class TaiKhoanVaiTroSeeder extends Seeder
 {
     public function run(): void
     {
-        $taiKhoanAdmin = DB::table('TaiKhoan')
-            ->where('ten_tai_khoan', 'admin@vnpt.vn')
-            ->value('id');
+        $nhom = ['hoang', 'hieu', 'khang'];
 
-        $taiKhoanGiamDoc = DB::table('TaiKhoan')
-            ->where('ten_tai_khoan', 'giamdoc@vnpt.vn')
-            ->value('id');
+        $vaiTros = [
+            'admin' => 'VT_Admin',
+            'giamdoc' => 'VT_GiamDoc',
+            'hr' => 'VT_HR',
+            'truongphong' => 'VT_TruongPhong',
+            'nhanvien' => 'VT_NhanVien',
+        ];
 
-        $taiKhoanHR = DB::table('TaiKhoan')
-            ->where('ten_tai_khoan', 'hr@vnpt.vn')
-            ->value('id');
+        foreach ($nhom as $prefix) {
+            foreach ($vaiTros as $ten => $maVaiTro) {
 
-        $taiKhoanTruongPhong = DB::table('TaiKhoan')
-            ->where('ten_tai_khoan', 'truongphong@vnpt.vn')
-            ->value('id');
-        
-        $taiKhoanNhanVien = DB::table('TaiKhoan')
-            ->where('ten_tai_khoan', 'nhanvien@vnpt.vn')
-            ->value('id');
+                $tenTaiKhoan = $prefix . $ten . '@vnpt.vn';
 
+                $taiKhoanId = DB::table('TaiKhoan')
+                    ->where('ten_tai_khoan', $tenTaiKhoan)
+                    ->value('id');
 
-        DB::table('TaiKhoanVaiTro')->insert([
-            [
-                'tai_khoan_id' => $taiKhoanAdmin,
-                'ma_vai_tro' => 'VT_Admin',
-            ],
-            [
-                'tai_khoan_id' => $taiKhoanNhanVien,
-                'ma_vai_tro' => 'VT_NhanVien',
-            ],
-            [
-                'tai_khoan_id' => $taiKhoanTruongPhong,
-                'ma_vai_tro' => 'VT_TruongPhong',
-            ],
-            [
-                'tai_khoan_id' => $taiKhoanGiamDoc,
-                'ma_vai_tro' => 'VT_GiamDoc',
-            ],
-            [
-                'tai_khoan_id' => $taiKhoanHR,
-                'ma_vai_tro' => 'VT_HR',
-            ],
+                if (!$taiKhoanId) {
+                    continue;
+                }
 
-        ]);
+                DB::table('TaiKhoanVaiTro')->updateOrInsert(
+                    [
+                        'tai_khoan_id' => $taiKhoanId,
+                        'ma_vai_tro' => $maVaiTro,
+                    ],
+                    [
+                        'tai_khoan_id' => $taiKhoanId,
+                        'ma_vai_tro' => $maVaiTro,
+                    ]
+                );
+            }
+        }
     }
 }

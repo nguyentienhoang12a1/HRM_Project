@@ -12,7 +12,7 @@ return new class extends Migration
             $table->id();
 
             $table->unsignedBigInteger('id_thong_bao');
-            $table->string('ma_nhan_vien', 50);
+            $table->string('ma_nhan_vien', 20)->nullable();
 
             $table->boolean('da_doc')->default(false);
             $table->dateTime('ngay_doc')->nullable();
