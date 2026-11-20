@@ -86,12 +86,10 @@ Route::middleware(['permission.scope'])->group(function () {
     | CHẤM CÔNG FACEID, ĐĂNG KÝ FACEID & LỊCH SỬ CHẤM CÔNG
     |--------------------------------------------------------------------------
     */
-   // Giao diện Đăng ký FaceID cho Nhân viên
-    Route::get('/nhanvien/{ma_nhan_vien}/register-face', [ChamCongController::class, 'showRegisterFaceForm'])->name('nhanvien.register_face');
-
+    // Giao diện Đăng ký FaceID cho Nhân viên
+    Route::get('/dang-ky-faceid', [NhanVienController::class, 'showFaceRegister'])->name('nhanvien.face_register');
     // API Lưu dữ liệu Vector 128 tham số khuôn mặt
-    Route::post('/nhanvien/{ma_nhan_vien}/save-face', [ChamCongController::class, 'saveFaceVector'])->name('nhanvien.save_face');
-
+    Route::post('/luu-faceid', [NhanVienController::class, 'saveFaceVector'])->name('nhanvien.save_face');
     // CRUD Quản lý Nhân viên (ĐẶT PHÍA DƯỚI)
     Route::resource('nhanvien', NhanVienController::class)->parameters([
         'nhanvien' => 'ma_nhan_vien',

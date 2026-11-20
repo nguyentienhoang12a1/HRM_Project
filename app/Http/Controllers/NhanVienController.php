@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use App\Models\ChucVu;
 use App\Models\NhanVien;
 use App\Models\PhanQuyen;
@@ -265,6 +266,66 @@ class NhanVienController extends Controller
             DB::rollBack();
             Log::error('Lỗi xóa nhân viên: ' . $e->getMessage());
             return back()->withErrors(['delete_error' => 'Không thể xóa nhân viên này do đang có dữ liệu Hợp đồng/Chấm công/Lương liên kết.']);
+        }
+    }
+    /**
+     * Hiển thị màn hình đăng ký FaceID dùng chung kèm danh sách nhân viên theo phạm vi quyền.
+     */
+    public function showFaceRegister(): View
+    {
+        $currentUser = TaiKhoan::with(['nhanVien.chucVu', 'phanQuyen'])->findOrFail(Auth::id());
+        $scope = $currentUser->getDataScope();
+
+        $query = NhanVien::select('ma_nhan_vien', 'ho_va_ten', 'face_vector');
+
+        // Áp dụng lọc phạm vi quyền đồng bộ với trang danh sách nhân viên
+        if ($scope === 'department') {
+            $maPhong = optional(optional($currentUser->nhanVien)->chucVu)->ma_phong;
+            $query->whereHas('chucVu', function ($q) use ($maPhong) {
+                $q->where('ma_phong', $maPhong);
+            });
+        } elseif ($scope === 'personal') {
+            $query->where('ma_nhan_vien', $currentUser->ma_nhan_vien);
+        }
+
+        $danhSachNhanVien = $query->orderBy('ma_nhan_vien', 'asc')->get();
+
+        // Đổi 'nhanvien.dang_ky_faceid' thành đúng tên file Blade đăng ký FaceID của bạn
+        return view('nhanvien.dang_ky_faceid', compact('danhSachNhanVien'));
+    }
+
+    /**
+     * Lưu dữ liệu vector 128 số (FaceID) cho nhân viên được chọn từ dropdown.
+     */
+    public function saveFaceVector(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ma_nhan_vien' => ['required', 'string', 'exists:nhanvien,ma_nhan_vien'],
+            'face_vector'  => ['required', 'array', 'size:128'],
+        ], [
+            'ma_nhan_vien.required' => 'Vui lòng chọn nhân viên cần đăng ký.',
+            'ma_nhan_vien.exists'   => 'Mã nhân viên không tồn tại trong hệ thống.',
+            'face_vector.required'  => 'Không nhận được dữ liệu vector khuôn mặt.',
+            'face_vector.size'      => 'Dữ liệu khuôn mặt không đúng chuẩn 128 chiều.',
+        ]);
+
+        try {
+            $nhanVien = NhanVien::findOrFail($validated['ma_nhan_vien']);
+            $nhanVien->update([
+                'face_vector' => json_encode($validated['face_vector']),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Đã lưu dữ liệu khuôn mặt thành công cho [{$nhanVien->ho_va_ten}]!"
+            ]);
+        } catch (Throwable $e) {
+            Log::error('Lỗi lưu FaceID nhân viên: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi hệ thống khi lưu dữ liệu khuôn mặt.'
+            ], 500);
         }
     }
 }

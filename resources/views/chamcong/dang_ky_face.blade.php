@@ -5,9 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Đăng ký FaceID - {{ $nhanVien->ho_va_ten ?? $nhanVien->ho_ten }}</title>
+    <title>Đăng ký FaceID Nhân Viên</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Dùng bản JS đã fix lỗi tensor shape -->
     <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
 </head>
 
@@ -16,13 +15,28 @@
     <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 text-center space-y-4">
         <div>
             <h1 class="text-2xl font-bold text-slate-800">Đăng Ký FaceID</h1>
-            <p class="text-slate-500 mt-1">Nhân viên: <span
-                    class="font-semibold text-blue-600">{{ $nhanVien->ho_va_ten ?? $nhanVien->ho_ten }}</span> ({{ $nhanVien->ma_nhan_vien }})
-            </p>
+            <p class="text-slate-500 text-sm mt-1">Chọn nhân viên và nhìn thẳng vào camera để lưu dữ liệu</p>
         </div>
 
-        <div
-            class="relative w-full aspect-[4/3] bg-black rounded-xl overflow-hidden flex items-center justify-center border-2 border-slate-200 shadow-inner">
+        <!-- Ô CHỌN NHÂN VIÊN TỪ BẢNG NHANVIEN -->
+        <div class="text-left">
+            <label for="select-nhanvien" class="block text-sm font-semibold text-slate-700 mb-1">
+                Nhân viên cần đăng ký:
+            </label>
+            <select id="select-nhanvien" onchange="checkReady()"
+                class="w-full bg-slate-50 border border-slate-300 text-slate-800 font-medium rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <option value="">-- Chọn nhân viên trong danh sách --</option>
+                @foreach($danhSachNhanVien as $nv)
+                    <option value="{{ $nv->ma_nhan_vien }}">
+                        {{ $nv->ma_nhan_vien }} - {{ $nv->ho_va_ten ?? $nv->ho_ten }}
+                        {{ !empty($nv->face_vector) ? '(Đã có FaceID)' : '' }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
+
+        <!-- KHUNG CAMERA -->
+        <div class="relative w-full aspect-[4/3] bg-black rounded-xl overflow-hidden flex items-center justify-center border-2 border-slate-200 shadow-inner">
             <video id="video" autoplay muted playsinline class="w-full h-full object-cover"></video>
             <div id="overlay-status"
                 class="absolute inset-0 bg-black/60 flex items-center justify-center text-white font-medium p-4 text-center">
@@ -33,20 +47,21 @@
         <p id="status-text" class="text-sm font-medium text-slate-600 h-6">Vui lòng chờ...</p>
 
         <button id="btn-capture" disabled onclick="captureAndSave()"
-            class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-semibold rounded-xl transition duration-200 shadow-lg shadow-emerald-600/30">
+            class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition duration-200 shadow-lg shadow-emerald-600/30">
             Chụp & Lưu Khuôn Mặt
         </button>
     </div>
 
     <script>
-        const maNhanVien = "{{ $nhanVien->ma_nhan_vien }}";
+        const selectNhanVien = document.getElementById('select-nhanvien');
         const video = document.getElementById('video');
         const overlayStatus = document.getElementById('overlay-status');
         const statusText = document.getElementById('status-text');
         const btnCapture = document.getElementById('btn-capture');
 
-        // Tạo URL động chính xác theo route nhanvien.save_face trong web.php
-        const saveFaceUrl = "{{ route('nhanvien.save_face', $nhanVien->ma_nhan_vien) }}";
+        // URL dùng chung không truyền tham số mã nhân viên trên route
+        const saveFaceUrl = "{{ route('nhanvien.save_face') }}";
+        let isCameraReady = false;
 
         async function initSystem() {
             try {
@@ -73,17 +88,13 @@
         }
 
         function startCamera() {
-            navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: 640,
-                        height: 480
-                    }
-                })
+            navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
                 .then(stream => {
                     video.srcObject = stream;
                     overlayStatus.classList.add('hidden');
-                    statusText.innerText = "Hãy nhìn thẳng vào camera và bấm nút đăng ký";
-                    btnCapture.disabled = false;
+                    isCameraReady = true;
+                    statusText.innerText = "Hãy chọn nhân viên, nhìn thẳng camera và bấm lưu";
+                    checkReady();
                 })
                 .catch(() => {
                     overlayStatus.innerText = "Không thể mở Camera!";
@@ -91,8 +102,20 @@
                 });
         }
 
+        // Chỉ bật nút chụp khi Camera đã sẵn sàng VÀ đã chọn 1 nhân viên
+        function checkReady() {
+            btnCapture.disabled = !(isCameraReady && selectNhanVien.value !== "");
+        }
+
         async function captureAndSave() {
+            const maNhanVien = selectNhanVien.value;
+            if (!maNhanVien) {
+                alert("Vui lòng chọn nhân viên cần đăng ký!");
+                return;
+            }
+
             btnCapture.disabled = true;
+            statusText.className = "text-sm font-medium text-blue-600 h-6";
             statusText.innerText = "Đang phân tích khuôn mặt...";
 
             const detection = await faceapi.detectSingleFace(video)
@@ -100,45 +123,53 @@
                 .withFaceDescriptor();
 
             if (!detection) {
+                statusText.className = "text-sm font-medium text-red-600 h-6";
                 statusText.innerText = "❌ Không tìm thấy khuôn mặt! Vui lòng thử lại.";
-                btnCapture.disabled = false;
+                checkReady();
                 return;
             }
 
             const faceVector = Array.from(detection.descriptor);
 
             fetch(saveFaceUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                    },
-                    body: JSON.stringify({
-                        face_vector: faceVector
-                    })
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({
+                    ma_nhan_vien: maNhanVien,
+                    face_vector: faceVector
                 })
-                .then(async res => {
-                    const data = await res.json();
-                    if (res.ok && data.success) {
-                        statusText.className = "text-sm font-bold text-emerald-600";
-                        statusText.innerText = "🎉 Đăng ký FaceID thành công!";
-                        alert("Đã lưu dữ liệu khuôn mặt thành công!");
-                        setTimeout(() => {
-                            window.location.href = "{{ route('nhanvien.index') }}";
-                        }, 1500);
-                    } else {
-                        statusText.className = "text-sm font-medium text-red-600";
-                        statusText.innerText = `❌ ${data.message || 'Có lỗi xảy ra khi lưu dữ liệu.'}`;
-                        btnCapture.disabled = false;
+            })
+            .then(async res => {
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    statusText.className = "text-sm font-bold text-emerald-600 h-6";
+                    statusText.innerText = `🎉 Đăng ký FaceID thành công cho ${maNhanVien}!`;
+                    
+                    // Đánh dấu "(Đã có FaceID)" ngay trên dropdown
+                    const opt = selectNhanVien.options[selectNhanVien.selectedIndex];
+                    if (!opt.text.includes('(Đã có FaceID)')) {
+                        opt.text += ' (Đã có FaceID)';
                     }
-                })
-                .catch(err => {
-                    console.error("Lỗi Fetch:", err);
-                    statusText.className = "text-sm font-medium text-red-600";
-                    statusText.innerText = "❌ Lỗi kết nối Server! Kiểm tra lại Console (F12).";
-                    btnCapture.disabled = false;
-                });
+
+                    // Reset lựa chọn để tiện đăng ký tiếp người khác mà không cần load lại trang
+                    selectNhanVien.value = "";
+                    checkReady();
+                } else {
+                    statusText.className = "text-sm font-medium text-red-600 h-6";
+                    statusText.innerText = `❌ ${data.message || 'Có lỗi xảy ra khi lưu dữ liệu.'}`;
+                    checkReady();
+                }
+            })
+            .catch(err => {
+                console.error("Lỗi Fetch:", err);
+                statusText.className = "text-sm font-medium text-red-600 h-6";
+                statusText.innerText = "❌ Lỗi kết nối Server! Kiểm tra lại Console (F12).";
+                checkReady();
+            });
         }
 
         document.addEventListener("DOMContentLoaded", initSystem);

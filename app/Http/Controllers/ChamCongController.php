@@ -10,7 +10,7 @@ use Carbon\Carbon;
 class ChamCongController extends Controller
 {
     /**
-     * 1. Hiển thị giao diện Máy Chấm Công (Khớp với Route: index)
+     * 1. Hiển thị giao diện Máy Chấm Công
      */
     public function index()
     {
@@ -37,67 +37,89 @@ class ChamCongController extends Controller
     }
 
     /**
-     * 3. Nhận request từ JS và lưu nhật ký chấm công vào DB
+     * 3. Nhận request từ JS và lưu nhật ký chấm công (Hỗ trợ cả Ca chính & Tăng ca)
      */
     public function storeCheckin(Request $request)
-{
-    $request->validate([
-        'ma_nhan_vien' => 'required'
-    ]);
-
-    $nhanVien = DB::table('NhanVien')->where('ma_nhan_vien', $request->ma_nhan_vien)->first();
-    $today = Carbon::today('Asia/Ho_Chi_Minh');
-    $now = Carbon::now('Asia/Ho_Chi_Minh');
-    $loaiButton = $request->input('loai_cham_cong'); // 'in' hoặc 'out'
-
-    $chamCongHomNay = DB::table('chamcong')
-        ->where('ma_nhan_vien', $nhanVien->ma_nhan_vien)
-        ->whereDate('created_at', $today)
-        ->first();
-
-    if ($loaiButton === 'in' || (!$chamCongHomNay && !$loaiButton)) {
-        // Lưu Check-in
-        if ($chamCongHomNay) {
-            return response()->json(['success' => false, 'message' => 'Bạn đã Check-in trong ngày hôm nay rồi!']);
-        }
-        DB::table('chamcong')->insert([
-            'ma_nhan_vien'  => $nhanVien->ma_nhan_vien,
-            'thoi_gian_vao' => $now,
-            'trang_thai'    => 'Thành công',
-            'created_at'    => $now,
-            'updated_at'    => $now,
+    {
+        $request->validate([
+            'ma_nhan_vien' => 'required'
         ]);
-        $type = 'Check-in (Vào)';
-    } else {
-        // Lưu Check-out
-        if (!$chamCongHomNay) {
-            return response()->json(['success' => false, 'message' => 'Bạn chưa Check-in vào nên không thể Check-out!']);
+
+        // Dùng tên bảng chữ thường 'nhanvien' khớp với MySQL
+        $nhanVien = DB::table('nhanvien')->where('ma_nhan_vien', $request->ma_nhan_vien)->first();
+
+        if (!$nhanVien) {
+            return response()->json(['success' => false, 'message' => 'Không tìm thấy thông tin nhân viên!'], 404);
         }
-        DB::table('chamcong')
-            ->where('id', $chamCongHomNay->id)
-            ->update([
-                'thoi_gian_ra' => $now,
-                'updated_at'   => $now,
+
+        $today = Carbon::today('Asia/Ho_Chi_Minh');
+        $now = Carbon::now('Asia/Ho_Chi_Minh');
+        $loaiButton = $request->input('loai_cham_cong'); // 'in' hoặc 'out'
+
+        // Lấy lượt chấm công MỚI NHẤT trong ngày hôm nay
+        $luotCuoiHomNay = DB::table('chamcong')
+            ->where('ma_nhan_vien', $nhanVien->ma_nhan_vien)
+            ->whereDate('created_at', $today)
+            ->orderBy('id', 'desc')
+            ->first();
+
+        // TRƯỜNG HỢP 1: BẤM CHECK-IN (VÀO)
+        if ($loaiButton === 'in' || (!$luotCuoiHomNay && !$loaiButton)) {
+            if ($luotCuoiHomNay && is_null($luotCuoiHomNay->thoi_gian_ra)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Bạn đã Check-in rồi! Vui lòng Check-out ca trước khi tạo ca mới.'
+                ]);
+            }
+
+            $isTangCa = (bool) $luotCuoiHomNay;
+
+            DB::table('chamcong')->insert([
+                'ma_nhan_vien'  => $nhanVien->ma_nhan_vien,
+                'thoi_gian_vao' => $now,
+                'trang_thai'    => $isTangCa ? 'Tăng ca' : 'Thành công',
+                'created_at'    => $now,
+                'updated_at'    => $now,
             ]);
-        $type = 'Check-out (Ra)';
+
+            $type = $isTangCa ? 'Check-in Tăng ca' : 'Check-in (Vào)';
+        }
+        // TRƯỜNG HỢP 2: BẤM CHECK-OUT (RA)
+        else {
+            if (!$luotCuoiHomNay || !is_null($luotCuoiHomNay->thoi_gian_ra)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Bạn chưa Check-in ca nào để thực hiện Check-out!'
+                ]);
+            }
+
+            DB::table('chamcong')
+                ->where('id', $luotCuoiHomNay->id)
+                ->update([
+                    'thoi_gian_ra' => $now,
+                    'updated_at'   => $now,
+                ]);
+
+            $type = ($luotCuoiHomNay->trang_thai === 'Tăng ca') ? 'Check-out Tăng ca' : 'Check-out (Ra)';
+        }
+
+        return response()->json([
+            'success'   => true,
+            'ho_ten'    => $nhanVien->ho_va_ten ?? $nhanVien->ho_ten,
+            'loai'      => $type,
+            'thoi_gian' => $now->format('H:i:s d/m/Y')
+        ]);
     }
 
-    return response()->json([
-        'success'   => true,
-        'ho_ten'    => $nhanVien->ho_va_ten ?? $nhanVien->ho_ten,
-        'loai'      => $type,
-        'thoi_gian' => $now->format('H:i:s d/m/Y')
-    ]);
-}
     /**
-     * 6. Trang danh sách lịch sử chấm công
+     * 4. Trang danh sách lịch sử chấm công (Đã sửa đồng bộ tên bảng chamcong & nhanvien)
      */
     public function lichSuChamCong()
     {
         $lichSu = DB::table('chamcong')
-            ->join('NhanVien', 'cham_cong.ma_nhan_vien', '=', 'NhanVien.ma_nhan_vien')
-            ->select('cham_cong.*', 'NhanVien.ho_va_ten as ho_ten')
-            ->orderBy('cham_cong.created_at', 'desc')
+            ->join('nhanvien', 'chamcong.ma_nhan_vien', '=', 'nhanvien.ma_nhan_vien')
+            ->select('chamcong.*', 'nhanvien.ho_va_ten as ho_ten')
+            ->orderBy('chamcong.created_at', 'desc')
             ->paginate(15);
 
         return view('chamcong.lich_su', compact('lichSu'));

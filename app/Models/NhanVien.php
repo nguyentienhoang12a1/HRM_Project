@@ -26,6 +26,7 @@ class NhanVien extends Model
         'so_dien_thoai',
         'ma_chuc_vu',
         'trang_thai',
+        'face_vector',
     ];
 
     public function chucVu(): BelongsTo
