@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 
+<<<<<<< HEAD
 <html class="h-full" lang="vi"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
@@ -801,3 +802,4 @@
     });
   </script>
 </body></html>
+

@@ -3,8 +3,6 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -23,11 +21,10 @@ class DatabaseSeeder extends Seeder
             // Tạo nhân viên trước
             NhanVienSeeder::class,
 
-            // Sau đó mới tạo tài khoản
+            // Sau đó mới tạo tài khoản và phân quyền
             TaiKhoanSeeder::class,
             TaiKhoanVaiTroSeeder::class,
             VaiTroChucNangSeeder::class,
-            
         ]);
     }
 }

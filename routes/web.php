@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\OTPController;
 use App\Http\Controllers\Auth\PasswordController;
+use App\Http\Controllers\ChamCongController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\NhanVienController;
 use Illuminate\Support\Facades\Auth;
@@ -50,61 +51,59 @@ Route::middleware(['auth', 'permission.scope'])->group(function () {
 
     // Điều hướng Dashboard theo vai trò
     Route::get('/dashboard', function () {
-
         $user = \App\Models\TaiKhoan::with('vaiTros')
             ->findOrFail(\Illuminate\Support\Facades\Auth::id());
 
         $roleKeys = session('user_roles', []);
 
         return match (true) {
-
             in_array('VT_Admin', $roleKeys, true) =>
-                redirect()->route('pages.admin'),
+            redirect()->route('pages.admin'),
 
             in_array('VT_GiamDoc', $roleKeys, true) =>
-                redirect()->route('pages.giamdoc'),
+            redirect()->route('pages.giamdoc'),
 
             in_array('VT_HR', $roleKeys, true) =>
-                redirect()->route('pages.hr'),
+            redirect()->route('pages.hr'),
 
             in_array('VT_TruongPhong', $roleKeys, true) =>
-                redirect()->route('pages.truongphong'),
+            redirect()->route('pages.truongphong'),
 
             in_array('VT_NhanVien', $roleKeys, true) =>
-                redirect()->route('pages.nhanvien'),
+            redirect()->route('pages.nhanvien'),
 
             default => abort(403, 'Tài khoản chưa được phân công vai trò.')
         };
-    });
+    })->name('dashboard');
 
     // 5 Trang chủ theo vai trò trong resources/views/pages/ của nhóm
     // Trang chủ Admin
     Route::get('/admin/home', function () {
-        abort_unless( in_array('VT_Admin', session('user_roles', []), true), 403 );
+        abort_unless(in_array('VT_Admin', session('user_roles', []), true), 403);
         return view('pages.Index_Admin');
     })->name('pages.admin');
 
     // Trang chủ Giám đốc
     Route::get('/giam-doc/home', function () {
-        abort_unless(in_array('VT_GiamDoc', session('user_roles', []), true), 403 );
+        abort_unless(in_array('VT_GiamDoc', session('user_roles', []), true), 403);
         return view('pages.Index_GiamDoc');
     })->name('pages.giamdoc');
 
     // Trang chủ HR
     Route::get('/hr/home', function () {
-        abort_unless(in_array('VT_HR', session('user_roles', []), true),403);
+        abort_unless(in_array('VT_HR', session('user_roles', []), true), 403);
         return view('pages.Index_HR');
     })->name('pages.hr');
 
     // Trang chủ Trưởng phòng
     Route::get('/truong-phong/home', function () {
-        abort_unless(in_array('VT_TruongPhong', session('user_roles', []), true),403);
+        abort_unless(in_array('VT_TruongPhong', session('user_roles', []), true), 403);
         return view('pages.Index_TruongPhong');
     })->name('pages.truongphong');
 
     // Trang chủ Nhân viên
     Route::get('/nhan-vien/home', function () {
-        abort_unless(in_array('VT_NhanVien', session('user_roles', []), true),403);
+        abort_unless(in_array('VT_NhanVien', session('user_roles', []), true), 403);
         return view('pages.Index_NhanVien');
     })->name('pages.nhanvien');
 
@@ -116,12 +115,10 @@ Route::middleware(['auth', 'permission.scope'])->group(function () {
     // Quản lý nhân viên - Kiểm tra quyền chức năng
     Route::middleware('permission.scope:MA_CHUC_NANG_NHAN_VIEN')
         ->group(function () {
-
             Route::resource('nhanvien', NhanVienController::class)
                 ->parameters([
                     'nhanvien' => 'ma_nhan_vien',
                 ]);
-
         });
 
     // Quản lý phân quyền truy cập (UC-ROLE-01 - Dành cho Admin)
@@ -130,12 +127,26 @@ Route::middleware(['auth', 'permission.scope'])->group(function () {
         ->name('admin.')
         ->middleware('permission.scope:NS_011')
         ->group(function () {
-
             Route::get('/roles', [RoleController::class, 'index'])
                 ->name('roles.index');
 
             Route::put('/roles/{id}', [RoleController::class, 'update'])
                 ->name('roles.update');
-
         });
+
+    /*
+    |--------------------------------------------------------------------------
+    | CHẤM CÔNG FACEID, ĐĂNG KÝ FACEID & LỊCH SỬ CHẤM CÔNG
+    |--------------------------------------------------------------------------
+    */
+    // Giao diện Đăng ký FaceID cho Nhân viên
+    Route::get('/dang-ky-faceid', [NhanVienController::class, 'showFaceRegister'])->name('nhanvien.face_register');
+    // API Lưu dữ liệu Vector 128 tham số khuôn mặt
+    Route::post('/luu-faceid', [NhanVienController::class, 'saveFaceVector'])->name('nhanvien.save_face');
+
+    // Các route Chấm công khác
+    Route::get('/cham-cong', [ChamCongController::class, 'index'])->name('chamcong.index');
+    Route::get('/face-database', [ChamCongController::class, 'getFaceDatabase'])->name('chamcong.facedata');
+    Route::post('/luu-cham-cong', [ChamCongController::class, 'storeCheckin'])->name('chamcong.luu');
+    Route::get('/lich-su-cham-cong', [ChamCongController::class, 'lichSuChamCong'])->name('chamcong.lich_su');
 });

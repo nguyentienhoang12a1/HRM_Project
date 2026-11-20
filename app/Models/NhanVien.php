@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-
 class NhanVien extends Model
 {
     use HasFactory;
@@ -38,6 +37,8 @@ class NhanVien extends Model
         'ngay_vao_lam_viec',
         'ngay_canh_bao',
         'trang_thai_nhan_vien',
+        'trang_thai',
+        'face_vector',
 
         // 2. Thông tin cá nhân và gia đình
         'ho',
@@ -175,7 +176,6 @@ class NhanVien extends Model
         ];
     }
 
-
     // Một nhân viên có một tài khoản
     public function taiKhoan(): HasOne
     {
@@ -245,7 +245,7 @@ class NhanVien extends Model
             'ma_nhan_vien'
         );
     }
-    
+
     /**
      * Một nhân viên thuộc về một vị trí công việc.
      */
@@ -258,7 +258,7 @@ class NhanVien extends Model
         );
     }
 
-        /**
+    /**
      * Một nhân viên thuộc về một phong ban
      */
     public function phongBan(): BelongsTo
@@ -269,7 +269,8 @@ class NhanVien extends Model
             'ma_phong_ban'
         );
     }
-        /**
+
+    /**
      * Một nhân viên thuộc về một chuc vu
      */
     public function chuVu(): BelongsTo
@@ -280,8 +281,4 @@ class NhanVien extends Model
             'ma_chuc_vu'
         );
     }
-
 }
-
-
-
