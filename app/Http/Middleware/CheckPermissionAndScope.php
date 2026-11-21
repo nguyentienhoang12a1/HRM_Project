@@ -13,8 +13,37 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class CheckPermissionAndScope
 {
+    /**
+     * Các route name công khai cho phép truy cập không cần đăng nhập
+     */
+    private array $publicRouteNames = [
+        'chamcong.index',
+        'chamcong.facedata',
+        'chamcong.face.database',
+        'chamcong.checkin',
+        'chamcong.luu',
+        'chamcong.verify.admin.face',
+    ];
+
+    /**
+     * Các đường dẫn (URI) công khai dự phòng nếu route không đặt tên
+     */
+    private array $publicPaths = [
+        'cham-cong',
+        'cham-cong/face-data',
+        'cham-cong/face-database',
+        'cham-cong/checkin',
+        'cham-cong/luu',
+        'cham-cong/kiem-tra-admin-faceid',
+    ];
+
     public function handle(Request $request, Closure $next, ?string $requiredPermission = null): Response
     {
+        // Cho phép luồng máy chấm công công khai chạy mà không yêu cầu đăng nhập
+        if ($this->isPublicChamCongRequest($request)) {
+            return $next($request);
+        }
+
         // Bước 36-40: Trả về lỗi 401 nếu chưa đăng nhập
         if (!Auth::check()) {
             if ($request->expectsJson()) {
@@ -38,15 +67,11 @@ class CheckPermissionAndScope
                 ->withErrors(['auth_error' => 'Tài khoản không được phép đăng nhập (Nhân viên đã nghỉ việc hoặc bị khóa).']);
         }
 
-        
         // Kiểm tra quyền truy cập chức năng
-        
         if ($requiredPermission !== null) {
-
             // ==========================================
             // 1. LẤY DANH SÁCH VAI TRÒ VÀ CHỨC NĂNG
             // ==========================================
-
             $userRoles = session('user_roles', []);
             $userPermissions = session('user_permissions', []);
 
@@ -56,7 +81,6 @@ class CheckPermissionAndScope
             // ==========================================
             // 2. KIỂM TRA TÀI KHOẢN CÓ VAI TRÒ HỢP LỆ
             // ==========================================
-
             $validRoles = [
                 'VT_Admin',
                 'VT_HR',
@@ -70,7 +94,6 @@ class CheckPermissionAndScope
             // ==========================================
             // 3. KIỂM TRA QUYỀN CHỨC NĂNG
             // ==========================================
-
             $hasPermission = in_array(
                 $requiredPermission,
                 $userPermissions,
@@ -80,10 +103,7 @@ class CheckPermissionAndScope
             // ==========================================
             // 4. KIỂM TRA QUYỀN TRUY CẬP
             // ==========================================
-
-            // Tất cả vai trò đều phải có quyền chức năng
             if (!$hasValidRole || !$hasPermission) {
-
                 if ($request->expectsJson()) {
                     return response()->json([
                         'message' => 'Mã lỗi 403: Không đủ quyền truy cập tài nguyên.'
@@ -96,8 +116,17 @@ class CheckPermissionAndScope
             }
         }
 
-
-
         return $next($request);
+    }
+
+    private function isPublicChamCongRequest(Request $request): bool
+    {
+        $routeName = $request->route()?->getName();
+        if ($routeName && in_array($routeName, $this->publicRouteNames, true)) {
+            return true;
+        }
+
+        $path = trim($request->path(), '/');
+        return in_array($path, $this->publicPaths, true);
     }
 }

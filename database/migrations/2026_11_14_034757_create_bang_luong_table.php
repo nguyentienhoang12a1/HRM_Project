@@ -1,4 +1,3 @@
-
 <?php
 
 use Illuminate\Database\Migrations\Migration;
@@ -12,7 +11,7 @@ return new class extends Migration
         Schema::create('BangLuong', function (Blueprint $table) {
             $table->string('ma_bang_luong', 20)->primary();
 
-            $table->unsignedInteger('id_cham_cong')->unique();
+            $table->unsignedBigInteger('id_cham_cong')->unique();
 
             $table->string('ma_thong_tin_luong', 20);
 

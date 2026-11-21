@@ -7,6 +7,7 @@ use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\ChamCongController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\NhanVienController;
+use App\Http\Middleware\EnsureUserIsAdmin;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -40,7 +41,42 @@ Route::middleware('guest')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Nhóm Route Đã Xác Thực OTP + Tự Động Đăng Xuất Sau 10 Phút Không Hoạt Động
+| 1. Máy Chấm Công Độc Lập - KHÔNG Cần Đăng Nhập
+|--------------------------------------------------------------------------
+*/
+Route::get('/cham-cong', [ChamCongController::class, 'index'])->name('chamcong.index');
+Route::get('/cham-cong/face-database', [ChamCongController::class, 'getFaceDatabase'])->name('chamcong.face.database');
+Route::get('/cham-cong/face-data', [ChamCongController::class, 'getFaceDatabase'])->name('chamcong.facedata');
+Route::post('/cham-cong/checkin', [ChamCongController::class, 'storeCheckin'])->name('chamcong.checkin');
+Route::post('/cham-cong/luu', [ChamCongController::class, 'storeCheckin'])->name('chamcong.luu');
+
+// Quét mặt kiểm tra có phải Admin để hiện nút mở trang đăng ký FaceID
+Route::post('/cham-cong/kiem-tra-admin-faceid', [ChamCongController::class, 'verifyAdminByFace'])
+    ->name('chamcong.verify.admin.face');
+
+/*
+|--------------------------------------------------------------------------
+| 2. Lịch Sử Chấm Công - Đăng Nhập Hệ Thống Mới Xem Được
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth'])->group(function () {
+    Route::get('/cham-cong/lich-su', [ChamCongController::class, 'lichSuChamCong'])->name('chamcong.lichsu');
+});
+
+/*
+|--------------------------------------------------------------------------
+| 3. Đăng Ký FaceID - Chỉ Admin Mới Được Truy Cập & Lưu
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth', EnsureUserIsAdmin::class])->group(function () {
+    Route::get('/cham-cong/dang-ky-faceid', [ChamCongController::class, 'showFaceRegister'])->name('chamcong.face.register.form');
+    Route::post('/cham-cong/dang-ky-faceid', [ChamCongController::class, 'saveFaceVector'])->name('chamcong.face.register');
+    Route::post('/nhan-vien/save-face', [ChamCongController::class, 'saveFaceVector'])->name('nhanvien.save_face');
+});
+
+/*
+|--------------------------------------------------------------------------
+| 4. Nhóm Route Đã Xác Thực OTP + Phân Quyền Hệ Thống
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth', 'permission.scope'])->group(function () {
@@ -51,9 +87,6 @@ Route::middleware(['auth', 'permission.scope'])->group(function () {
 
     // Điều hướng Dashboard theo vai trò
     Route::get('/dashboard', function () {
-        $user = \App\Models\TaiKhoan::with('vaiTros')
-            ->findOrFail(\Illuminate\Support\Facades\Auth::id());
-
         $roleKeys = session('user_roles', []);
 
         return match (true) {
@@ -76,32 +109,27 @@ Route::middleware(['auth', 'permission.scope'])->group(function () {
         };
     })->name('dashboard');
 
-    // 5 Trang chủ theo vai trò trong resources/views/pages/ của nhóm
-    // Trang chủ Admin
+    // 5 Trang chủ theo vai trò
     Route::get('/admin/home', function () {
         abort_unless(in_array('VT_Admin', session('user_roles', []), true), 403);
         return view('pages.Index_Admin');
     })->name('pages.admin');
 
-    // Trang chủ Giám đốc
     Route::get('/giam-doc/home', function () {
         abort_unless(in_array('VT_GiamDoc', session('user_roles', []), true), 403);
         return view('pages.Index_GiamDoc');
     })->name('pages.giamdoc');
 
-    // Trang chủ HR
     Route::get('/hr/home', function () {
         abort_unless(in_array('VT_HR', session('user_roles', []), true), 403);
         return view('pages.Index_HR');
     })->name('pages.hr');
 
-    // Trang chủ Trưởng phòng
     Route::get('/truong-phong/home', function () {
         abort_unless(in_array('VT_TruongPhong', session('user_roles', []), true), 403);
         return view('pages.Index_TruongPhong');
     })->name('pages.truongphong');
 
-    // Trang chủ Nhân viên
     Route::get('/nhan-vien/home', function () {
         abort_unless(in_array('VT_NhanVien', session('user_roles', []), true), 403);
         return view('pages.Index_NhanVien');
@@ -111,8 +139,7 @@ Route::middleware(['auth', 'permission.scope'])->group(function () {
     Route::get('/change-password', [PasswordController::class, 'showChangePasswordForm'])->name('password.change.form');
     Route::post('/change-password', [PasswordController::class, 'updatePassword'])->name('password.change.submit');
 
-    // CRUD Quản lý Nhân viên & Cấp Tài khoản (Dành cho Admin, Giám đốc, HR, Trưởng phòng)
-    // Quản lý nhân viên - Kiểm tra quyền chức năng
+    // CRUD Quản lý Nhân viên
     Route::middleware('permission.scope:MA_CHUC_NANG_NHAN_VIEN')
         ->group(function () {
             Route::resource('nhanvien', NhanVienController::class)
@@ -122,7 +149,6 @@ Route::middleware(['auth', 'permission.scope'])->group(function () {
         });
 
     // Quản lý phân quyền truy cập (UC-ROLE-01 - Dành cho Admin)
-    // Quản lý vai trò - Kiểm tra quyền chức năng
     Route::prefix('admin')
         ->name('admin.')
         ->middleware('permission.scope:NS_011')
@@ -133,20 +159,4 @@ Route::middleware(['auth', 'permission.scope'])->group(function () {
             Route::put('/roles/{id}', [RoleController::class, 'update'])
                 ->name('roles.update');
         });
-
-    /*
-    |--------------------------------------------------------------------------
-    | CHẤM CÔNG FACEID, ĐĂNG KÝ FACEID & LỊCH SỬ CHẤM CÔNG
-    |--------------------------------------------------------------------------
-    */
-    // Giao diện Đăng ký FaceID cho Nhân viên
-    Route::get('/dang-ky-faceid', [NhanVienController::class, 'showFaceRegister'])->name('nhanvien.face_register');
-    // API Lưu dữ liệu Vector 128 tham số khuôn mặt
-    Route::post('/luu-faceid', [NhanVienController::class, 'saveFaceVector'])->name('nhanvien.save_face');
-
-    // Các route Chấm công khác
-    Route::get('/cham-cong', [ChamCongController::class, 'index'])->name('chamcong.index');
-    Route::get('/face-database', [ChamCongController::class, 'getFaceDatabase'])->name('chamcong.facedata');
-    Route::post('/luu-cham-cong', [ChamCongController::class, 'storeCheckin'])->name('chamcong.luu');
-    Route::get('/lich-su-cham-cong', [ChamCongController::class, 'lichSuChamCong'])->name('chamcong.lich_su');
 });

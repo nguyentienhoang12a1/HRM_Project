@@ -17,7 +17,7 @@ class TaiKhoan extends Authenticatable
     protected $primaryKey = 'id';
     public $incrementing = true;
     protected $keyType = 'int';
-    public $timestamps = false; 
+    public $timestamps = false;
     protected $authPasswordName = 'mat_khau';
 
     protected $fillable = [
@@ -40,6 +40,7 @@ class TaiKhoan extends Authenticatable
     {
         return $this->mat_khau;
     }
+
     protected function casts(): array
     {
         return [
@@ -65,8 +66,9 @@ class TaiKhoan extends Authenticatable
             'id'
         );
     }
+
     // Một tài khoản có nhiều vai trò
-    public function vaiTros (): BelongsToMany
+    public function vaiTros(): BelongsToMany
     {
         return $this->belongsToMany(
             VaiTro::class,
@@ -76,6 +78,15 @@ class TaiKhoan extends Authenticatable
             'id',
             'ma_vai_tro'
         )->withPivot('id');
+    }
+
+    /**
+     * Tương thích ngược nếu code/view gọi quan hệ phanQuyen theo mô hình VaiTro mới.
+     * Nếu dự án vẫn giữ model PhanQuyen và cột ma_quyen, hãy đổi sang belongsTo(PhanQuyen::class, 'ma_quyen', 'ma_quyen').
+     */
+    public function phanQuyen(): BelongsToMany
+    {
+        return $this->vaiTros();
     }
 
     public function maOtps(): HasMany
@@ -91,9 +102,43 @@ class TaiKhoan extends Authenticatable
         return $this->ten_tai_khoan;
     }
 
-
     public function isAdmin(): bool
     {
         return $this->getRoleKey() === 'admin';
+    }
+    public function getRoleKey(): string
+    {
+        $roles = $this->relationLoaded('vaiTros')
+            ? $this->vaiTros
+            : $this->vaiTros()->get();
+
+        if ($roles->isEmpty()) {
+            return 'employee';
+        }
+
+        $keys = $roles->map(function ($role) {
+            return strtolower((string) ($role->ma_vai_tro ?? $role->ten_vai_tro ?? ''));
+        });
+
+        if ($keys->contains(fn($k) => str_contains($k, 'admin') || str_contains($k, 'quantri'))) {
+            return 'admin';
+        }
+
+        if ($keys->contains(fn($k) => str_contains($k, 'hr') || str_contains($k, 'nhansu') || str_contains($k, 'manager') || str_contains($k, 'truong'))) {
+            return 'manager';
+        }
+
+        return (string) ($keys->first() ?: 'employee');
+    }
+
+    public function getDataScope(): string
+    {
+        $roleKey = $this->getRoleKey();
+
+        return match ($roleKey) {
+            'admin', 'hr' => 'all',
+            'manager' => 'department',
+            default => 'self',
+        };
     }
 }

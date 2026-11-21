@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('ChiTietLuong', function (Blueprint $table) {
             $table->string('ma_chi_tiet', 50)->primary();
 
-            $table->string('ma_bang_luong', 50);
+            $table->string('ma_bang_luong', 20);
             $table->string('ma_khoan', 50);
 
             $table->decimal('so_luong', 10, 2)->default(0);

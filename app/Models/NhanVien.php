@@ -273,7 +273,7 @@ class NhanVien extends Model
     /**
      * Một nhân viên thuộc về một chuc vu
      */
-    public function chuVu(): BelongsTo
+    public function chucVu(): BelongsTo
     {
         return $this->belongsTo(
             ChucVu::class,
