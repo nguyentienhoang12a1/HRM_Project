@@ -39,44 +39,10 @@ Route::middleware('guest')->group(function () {
     Route::post('/reset-password/resend-otp', [ForgotPasswordController::class, 'resendResetOtp'])->name('password.otp.resend');
 });
 
-/*
-|--------------------------------------------------------------------------
-| 1. Máy Chấm Công Độc Lập - KHÔNG Cần Đăng Nhập
-|--------------------------------------------------------------------------
-*/
-Route::get('/cham-cong', [ChamCongController::class, 'index'])->name('chamcong.index');
-Route::get('/cham-cong/face-database', [ChamCongController::class, 'getFaceDatabase'])->name('chamcong.face.database');
-Route::get('/cham-cong/face-data', [ChamCongController::class, 'getFaceDatabase'])->name('chamcong.facedata');
-Route::post('/cham-cong/checkin', [ChamCongController::class, 'storeCheckin'])->name('chamcong.checkin');
-Route::post('/cham-cong/luu', [ChamCongController::class, 'storeCheckin'])->name('chamcong.luu');
-
-// Quét mặt kiểm tra có phải Admin để hiện nút mở trang đăng ký FaceID
-Route::post('/cham-cong/kiem-tra-admin-faceid', [ChamCongController::class, 'verifyAdminByFace'])
-    ->name('chamcong.verify.admin.face');
 
 /*
 |--------------------------------------------------------------------------
-| 2. Lịch Sử Chấm Công - Đăng Nhập Hệ Thống Mới Xem Được
-|--------------------------------------------------------------------------
-*/
-Route::middleware(['auth'])->group(function () {
-    Route::get('/cham-cong/lich-su', [ChamCongController::class, 'lichSuChamCong'])->name('chamcong.lichsu');
-});
-
-/*
-|--------------------------------------------------------------------------
-| 3. Đăng Ký FaceID - Chỉ Admin Mới Được Truy Cập & Lưu
-|--------------------------------------------------------------------------
-*/
-Route::middleware(['auth', EnsureUserIsAdmin::class])->group(function () {
-    Route::get('/cham-cong/dang-ky-faceid', [ChamCongController::class, 'showFaceRegister'])->name('chamcong.face.register.form');
-    Route::post('/cham-cong/dang-ky-faceid', [ChamCongController::class, 'saveFaceVector'])->name('chamcong.face.register');
-    Route::post('/nhan-vien/save-face', [ChamCongController::class, 'saveFaceVector'])->name('nhanvien.save_face');
-});
-
-/*
-|--------------------------------------------------------------------------
-| 4. Nhóm Route Đã Xác Thực OTP + Phân Quyền Hệ Thống
+| Nhóm Route Đã Xác Thực OTP + Phân Quyền Hệ Thống
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth', 'permission.scope'])->group(function () {
@@ -159,4 +125,33 @@ Route::middleware(['auth', 'permission.scope'])->group(function () {
             Route::put('/roles/{id}', [RoleController::class, 'update'])
                 ->name('roles.update');
         });
+});
+/*
+|--------------------------------------------------------------------------
+| Nhóm Route quản lý chấm công
+|--------------------------------------------------------------------------
+*/
+//Máy Chấm Công Độc Lập - KHÔNG Cần Đăng Nhập
+Route::get('/cham-cong', [ChamCongController::class, 'index'])->name('chamcong.index');
+Route::get('/cham-cong/face-database', [ChamCongController::class, 'getFaceDatabase'])->name('chamcong.face.database');
+Route::get('/cham-cong/face-data', [ChamCongController::class, 'getFaceDatabase'])->name('chamcong.facedata');
+Route::post('/cham-cong/checkin', [ChamCongController::class, 'storeCheckin'])->name('chamcong.checkin');
+Route::post('/cham-cong/luu', [ChamCongController::class, 'storeCheckin'])->name('chamcong.luu');
+
+// Quét mặt kiểm tra có phải Admin, HR để hiện nút mở trang đăng ký FaceID
+Route::post('/cham-cong/kiem-tra-admin-faceid', [ChamCongController::class, 'verifyAdminByFace'])
+    ->name('chamcong.verify.admin.face');
+
+//Lịch Sử Chấm Công - Đăng Nhập Hệ Thống Mới Xem Được
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/cham-cong/lich-su', [ChamCongController::class, 'lichSuChamCong'])->name('chamcong.lichsu');
+});
+
+// Đăng Ký FaceID - Chỉ Admin, HR Mới Được Truy Cập & Lưu
+
+Route::middleware(['auth', EnsureUserIsAdmin::class])->group(function () {
+    Route::get('/cham-cong/dang-ky-faceid', [ChamCongController::class, 'showFaceRegister'])->name('chamcong.face.register.form');
+    Route::post('/cham-cong/dang-ky-faceid', [ChamCongController::class, 'saveFaceVector'])->name('chamcong.face.register');
+    Route::post('/nhan-vien/save-face', [ChamCongController::class, 'saveFaceVector'])->name('nhanvien.save_face');
 });
