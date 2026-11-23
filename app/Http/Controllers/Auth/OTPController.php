@@ -21,21 +21,24 @@ use Throwable;
 class OTPController extends Controller
 {
     /**
-     * Bước B2 -> B5 & B13: Lấy Email từ bảng NhanVien, tạo OTP 6 số và gửi Email.
+     * Lấy Email từ bảng NhanVien, vô hiệu hóa OTP cũ, tạo OTP 6 số mới và gửi Email.
      */
     public function sendOtp(Request $request, TaiKhoan $taiKhoan): RedirectResponse
     {
-        // Bước B2: Lấy địa chỉ Email từ trường email trong bảng NhanVien
         $nhanVien = $taiKhoan->nhanVien;
         $email = $nhanVien ? trim((string) $nhanVien->email) : '';
 
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $request->session()->forget('otp_pending_tai_khoan_id');
             return redirect()->route('login')
-                ->withErrors(['otp_error' => 'Không tìm thấy địa chỉ Email để gửi mã OTP']);
+                ->withErrors(['otp_error' => 'Không tìm thấy địa chỉ Email hợp lệ để gửi mã OTP.']);
         }
 
-        // Bước B3: Tạo ngẫu nhiên mã OTP gồm 6 chữ số và thiết lập thời gian hiệu lực 5 phút
+        // Vô hiệu hóa các mã OTP cũ chưa sử dụng của tài khoản này
+        MaOTP::where('tai_khoan_id', $taiKhoan->id)
+            ->where('da_su_dung', false)
+            ->update(['da_su_dung' => true]);
+
         $otpCode = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $now = now();
 
@@ -47,19 +50,20 @@ class OTPController extends Controller
             'da_su_dung'        => false,
         ]);
 
-        // Bước B4, B5 & B13: Gửi Email chứa mã OTP
         try {
-            Mail::to($email)->send(new OtpMail($otpCode, $nhanVien->ho_va_ten));
+            $employeeName = trim((string) ($nhanVien->ho_va_ten
+                ?: trim((string) $nhanVien->ho . ' ' . (string) $nhanVien->ten)
+                ?: $taiKhoan->ten_tai_khoan));
 
-            // Bước B5: Chuyển đến giao diện nhập OTP kèm thông báo chuẩn
+            Mail::to($email)->send(new OtpMail($otpCode, $employeeName));
+
             return redirect()->route('otp.form')
-                ->with('success_message', 'Mã OTP đã được gửi đến Email của bạn');
+                ->with('success_message', 'Mã OTP đã được gửi đến Email của bạn.');
         } catch (Throwable $e) {
-            // Bước B13: Ghi nhận lỗi khi gửi Email thất bại
             Log::error('Lỗi gửi Email OTP: ' . $e->getMessage());
 
             return redirect()->route('otp.form')
-                ->withErrors(['otp_error' => 'Không thể gửi mã OTP. Vui lòng thử lại sau']);
+                ->withErrors(['otp_error' => 'Không thể gửi mã OTP. Vui lòng thử lại sau.']);
         }
     }
 
@@ -76,7 +80,7 @@ class OTPController extends Controller
     }
 
     /**
-     * Bước B6 -> B12: Kiểm tra mã OTP, khởi tạo Session đăng nhập và điều hướng về đúng trang của nhóm.
+     * Kiểm tra mã OTP, khởi tạo Session đăng nhập và điều hướng theo vai trò.
      */
     public function verifyOtp(Request $request): RedirectResponse
     {
@@ -85,102 +89,82 @@ class OTPController extends Controller
             return redirect()->route('login');
         }
 
-        // Bước B7: Kiểm tra dữ liệu đầu vào (bỏ trống hoặc không đúng định dạng 6 chữ số)
         $validator = Validator::make($request->all(), [
             'ma_otp' => ['required', 'regex:/^[0-9]{6}$/'],
         ]);
 
         if ($validator->fails()) {
-            return back()->withErrors(['otp_error' => 'Vui lòng nhập mã OTP hợp lệ']);
+            return back()->withErrors(['otp_error' => 'Vui lòng nhập mã OTP hợp lệ (6 chữ số).']);
         }
 
-        // Bước B8: Truy vấn CSDL kiểm tra mã OTP có tồn tại và tương ứng với tài khoản đang xác thực
         $otpRecord = MaOTP::where('tai_khoan_id', $taiKhoanId)
             ->where('ma_otp', $request->input('ma_otp'))
             ->latest('id')
             ->first();
 
-        // Bước B9: Không tìm thấy mã OTP tương ứng
         if (!$otpRecord) {
-            return back()->withErrors(['otp_error' => 'Mã OTP không chính xác, vui lòng thử lại']);
+            return back()->withErrors(['otp_error' => 'Mã OTP không chính xác, vui lòng thử lại.']);
         }
 
-        // Bước B10: Kiểm tra trạng thái sử dụng và thời gian hiệu lực (5 phút)
         if ($otpRecord->da_su_dung) {
-            return back()->withErrors(['otp_error' => 'Mã OTP này đã được sử dụng']);
+            return back()->withErrors(['otp_error' => 'Mã OTP này đã được sử dụng.']);
         }
 
         if ($otpRecord->isExpired()) {
-            return back()->withErrors(['otp_error' => 'Mã OTP này đã hết hạn sử dụng']);
+            return back()->withErrors(['otp_error' => 'Mã OTP này đã hết hạn sử dụng.']);
         }
 
-        // Bước B11: Cập nhật trạng thái mã OTP thành đã sử dụng
         $otpRecord->update(['da_su_dung' => true]);
 
-        // Bước B12: Khởi tạo Session đăng nhập và điều hướng theo vai trò tài khoản
         $taiKhoan = TaiKhoan::with(['vaiTros.chucNangs', 'nhanVien'])->findOrFail($taiKhoanId);
         Auth::login($taiKhoan);
 
         $request->session()->forget('otp_pending_tai_khoan_id');
         $request->session()->regenerate();
 
-        // Lưu đầy đủ các biến Session cho cả hệ thống của nhóm và Middleware Timeout 10 phút
-        $roleKeys = $taiKhoan->vaiTros
-            ->pluck('ma_vai_tro')
-            ->toArray();
-        // Danh sách chức năng được thực hiện
-        $user_permissions = $taiKhoan->vaiTros
+        $activeRoles = $taiKhoan->vaiTros->where('trang_thai', true);
+        $roleKeys = $activeRoles->pluck('ma_vai_tro')->toArray();
+
+        $userPermissions = $activeRoles
             ->flatMap(fn ($vaiTro) => $vaiTro->chucNangs)
-            ->filter(fn ($chucNang) => $chucNang->pivot->duoc_thuc_hien)
+            ->filter(fn ($chucNang) => $chucNang->trang_thai && $chucNang->pivot->duoc_thuc_hien)
             ->pluck('ma_chuc_nang')
             ->unique()
             ->values()
             ->toArray();
 
-        // Danh sách phạm vi theo từng chức năng
-        $user_scope = $taiKhoan->vaiTros
+        $userScope = $activeRoles
             ->flatMap(fn ($vaiTro) => $vaiTro->chucNangs)
-            ->filter(fn ($chucNang) => $chucNang->pivot->duoc_thuc_hien)
+            ->filter(fn ($chucNang) => $chucNang->trang_thai && $chucNang->pivot->duoc_thuc_hien)
             ->map(fn ($chucNang) => [
                 'ma_chuc_nang' => $chucNang->ma_chuc_nang,
-                'ma_pham_vi' => $chucNang->pivot->ma_pham_vi,
+                'ma_pham_vi'   => $chucNang->pivot->ma_pham_vi,
             ])
             ->values()
             ->toArray();
 
         $request->session()->put([
-            // Thông tin tài khoản
-            'tai_khoan_id' => $taiKhoan->id,
-            'ten_tai_khoan' => $taiKhoan->ten_tai_khoan,
-            'ma_nhan_vien' => $taiKhoan->ma_nhan_vien,
-            'ho_va_ten' => optional($taiKhoan->nhanVien)->ho_va_ten,
-
-            // Danh sách vai trò
-            'user_roles' => $roleKeys,
-
-            // Danh sách quyền chức năng
-            'user_permissions' => $user_permissions,
-
-            // Phạm vi dữ liệu theo từng chức năng
-            'user_scope' => $user_scope,
-
-            // Thời gian hoạt động
+            'tai_khoan_id'            => $taiKhoan->id,
+            'ten_tai_khoan'           => $taiKhoan->ten_tai_khoan,
+            'ma_nhan_vien'            => $taiKhoan->ma_nhan_vien,
+            'ho_va_ten'               => optional($taiKhoan->nhanVien)->ho_va_ten,
+            'user_roles'              => $roleKeys,
+            'user_permissions'        => $userPermissions,
+            'user_scope'              => $userScope,
             'last_activity_timestamp' => time(),
         ]);
-        //  ưu tiên vai trò cao nhất khi tài khoản có nhiều vai trò, bạn có thể dùng:
-        $roleKeys = session('user_roles', []);
 
         return match (true) {
-            in_array('VT_Admin', $roleKeys)       => redirect()->route('pages.admin')
+            in_array('VT_Admin', $roleKeys, true) => redirect()->route('pages.admin')
                 ->with('status', 'Đăng nhập Quản trị viên thành công!'),
 
-            in_array('VT_GiamDoc', $roleKeys)     => redirect()->route('pages.giamdoc')
+            in_array('VT_GiamDoc', $roleKeys, true) => redirect()->route('pages.giamdoc')
                 ->with('status', 'Chào mừng Ban Giám Đốc!'),
 
-            in_array('VT_HR', $roleKeys)          => redirect()->route('pages.hr')
+            in_array('VT_HR', $roleKeys, true) => redirect()->route('pages.hr')
                 ->with('status', 'Chào mừng bộ phận Nhân sự (HR)!'),
 
-            in_array('VT_TruongPhong', $roleKeys) => redirect()->route('pages.truongphong')
+            in_array('VT_TruongPhong', $roleKeys, true) => redirect()->route('pages.truongphong')
                 ->with('status', 'Chào mừng Trưởng phòng!'),
 
             default => redirect()->route('pages.nhanvien')
@@ -189,7 +173,7 @@ class OTPController extends Controller
     }
 
     /**
-     * Giai đoạn 3: Gửi lại mã OTP mới.
+     * Gửi lại mã OTP mới.
      */
     public function resendOtp(Request $request): RedirectResponse
     {

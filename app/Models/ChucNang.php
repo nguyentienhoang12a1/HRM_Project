@@ -43,11 +43,7 @@ class ChucNang extends Model
         )->withPivot([
             'id',
             'ma_pham_vi',
-            'duoc_xem',
-            'duoc_them',
-            'duoc_sua',
-            'duoc_xoa',
-            'duoc_duyet'
+            'duoc_thuc_hien',
         ]);
     }
 }

@@ -1,12 +1,9 @@
 <?php
 
-
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
-use App\Models\PhongBanChucVu;
 
 class PhongBanChucVuSeeder extends Seeder
 {
@@ -35,10 +32,10 @@ class PhongBanChucVuSeeder extends Seeder
         ];
 
         foreach ($phongBanChucVus as $item) {
-            DB::table('phongbanchucvu')->updateOrInsert(
+            DB::table('PhongBanChucVu')->updateOrInsert(
                 [
                     'ma_phong_ban' => $item['ma_phong_ban'],
-                    'ma_chuc_vu' => $item['ma_chuc_vu'],
+                    'ma_chuc_vu'   => $item['ma_chuc_vu'],
                 ],
                 $item
             );

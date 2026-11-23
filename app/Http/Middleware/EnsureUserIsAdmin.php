@@ -16,16 +16,18 @@ class EnsureUserIsAdmin
             return redirect()->route('login');
         }
 
-        // Kiểm tra qua session hoặc truy vấn trực tiếp bảng VaiTro
         $roles = session('user_roles', []);
         if (empty($roles) && method_exists($user, 'vaiTros')) {
-            $roles = $user->vaiTros()->pluck('VaiTro.ma_vai_tro')->toArray();
+            $roles = $user->vaiTros()
+                ->where('VaiTro.trang_thai', true)
+                ->pluck('VaiTro.ma_vai_tro')
+                ->toArray();
             session(['user_roles' => $roles]);
         }
 
         $allowedRoles = ['VT_Admin', 'VT_HR'];
         $hasAccess = !empty(array_intersect($roles, $allowedRoles))
-            || (method_exists($user, 'isAdmin') && $user->isAdmin());
+            || (method_exists($user, 'hasRole') && $user->hasRole($allowedRoles));
 
         if (!$hasAccess) {
             if ($request->expectsJson()) {

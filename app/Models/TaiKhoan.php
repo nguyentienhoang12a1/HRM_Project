@@ -2,23 +2,14 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 
 class TaiKhoan extends Authenticatable
 {
-    use HasFactory, Notifiable;
-
     protected $table = 'TaiKhoan';
     protected $primaryKey = 'id';
-    public $incrementing = true;
-    protected $keyType = 'int';
     public $timestamps = false;
-    protected $authPasswordName = 'mat_khau';
 
     protected $fillable = [
         'ten_tai_khoan',
@@ -27,118 +18,91 @@ class TaiKhoan extends Authenticatable
         'trang_thai',
     ];
 
-    protected $hidden = [
-        'mat_khau',
-    ];
-
-    public function getAuthPasswordName(): string
-    {
-        return 'mat_khau';
-    }
-
-    public function getAuthPassword(): string
-    {
-        return $this->mat_khau;
-    }
+    protected $hidden = ['mat_khau'];
 
     protected function casts(): array
     {
         return [
-            'mat_khau' => 'hashed',
             'trang_thai' => 'boolean',
         ];
     }
 
-    /**
-     * Liên kết tới bảng NhanVien qua cột ma_nhan_vien.
-     */
-    public function nhanVien(): BelongsTo
+    public function getAuthPassword()
+    {
+        return $this->mat_khau;
+    }
+
+    public function nhanVien()
     {
         return $this->belongsTo(NhanVien::class, 'ma_nhan_vien', 'ma_nhan_vien');
     }
 
-    // Một tài khoản có nhiều nhật ký hệ thống
-    public function nhatKyHeThongs(): HasMany
+    public function vaiTros()
     {
-        return $this->hasMany(
-            NhatKyHeThong::class,
-            'nguoi_thuc_hien_id',
-            'id'
-        );
+        return $this->belongsToMany(VaiTro::class, 'TaiKhoanVaiTro', 'tai_khoan_id', 'ma_vai_tro');
     }
 
-    // Một tài khoản có nhiều vai trò
-    public function vaiTros(): BelongsToMany
+    public function hasRole(string|array $roles): bool
     {
-        return $this->belongsToMany(
-            VaiTro::class,
-            'TaiKhoanVaiTro',
-            'tai_khoan_id',
-            'ma_vai_tro',
-            'id',
-            'ma_vai_tro'
-        )->withPivot('id');
-    }
+        $targetRoles = (array) $roles;
 
-    /**
-     * Tương thích ngược nếu code/view gọi quan hệ phanQuyen theo mô hình VaiTro mới.
-     * Nếu dự án vẫn giữ model PhanQuyen và cột ma_quyen, hãy đổi sang belongsTo(PhanQuyen::class, 'ma_quyen', 'ma_quyen').
-     */
-    public function phanQuyen(): BelongsToMany
-    {
-        return $this->vaiTros();
-    }
-
-    public function maOtps(): HasMany
-    {
-        return $this->hasMany(MaOTP::class, 'tai_khoan_id', 'id');
-    }
-
-    /**
-     * Tương thích ngược nếu View/Controller gọi $taiKhoan->ten_dang_nhap hoặc $taiKhoan->ma_nhan_vien.
-     */
-    public function getTenDangNhapAttribute(): string
-    {
-        return $this->ten_tai_khoan;
+        return $this->vaiTros()
+            ->where('VaiTro.trang_thai', true)
+            ->whereIn('VaiTro.ma_vai_tro', $targetRoles)
+            ->exists();
     }
 
     public function isAdmin(): bool
     {
-        return $this->getRoleKey() === 'admin';
-    }
-    public function getRoleKey(): string
-    {
-        $roles = $this->relationLoaded('vaiTros')
-            ? $this->vaiTros
-            : $this->vaiTros()->get();
-
-        if ($roles->isEmpty()) {
-            return 'employee';
-        }
-
-        $keys = $roles->map(function ($role) {
-            return strtolower((string) ($role->ma_vai_tro ?? $role->ten_vai_tro ?? ''));
-        });
-
-        if ($keys->contains(fn($k) => str_contains($k, 'admin') || str_contains($k, 'quantri'))) {
-            return 'admin';
-        }
-
-        if ($keys->contains(fn($k) => str_contains($k, 'hr') || str_contains($k, 'nhansu') || str_contains($k, 'manager') || str_contains($k, 'truong'))) {
-            return 'manager';
-        }
-
-        return (string) ($keys->first() ?: 'employee');
+        return $this->hasRole('VT_Admin');
     }
 
-    public function getDataScope(): string
+    // Kiểm tra tài khoản có được thực hiện mã chức năng hay không
+    public function hasPermission(string $maChucNang): bool
     {
-        $roleKey = $this->getRoleKey();
+        $maVaiTros = $this->vaiTros()
+            ->where('VaiTro.trang_thai', true)
+            ->pluck('VaiTro.ma_vai_tro');
 
-        return match ($roleKey) {
-            'admin', 'hr' => 'all',
-            'manager' => 'department',
-            default => 'self',
-        };
+        if ($maVaiTros->isEmpty()) {
+            return false;
+        }
+
+        return DB::table('VaiTroChucNang')
+            ->join('ChucNang', 'VaiTroChucNang.ma_chuc_nang', '=', 'ChucNang.ma_chuc_nang')
+            ->whereIn('VaiTroChucNang.ma_vai_tro', $maVaiTros)
+            ->where('VaiTroChucNang.ma_chuc_nang', $maChucNang)
+            ->where('VaiTroChucNang.duoc_thuc_hien', true)
+            ->where('ChucNang.trang_thai', true)
+            ->exists();
+    }
+
+    // Lấy phạm vi dữ liệu cao nhất ('all' > 'department' > 'self')
+    public function getDataScope(string $maChucNang): string
+    {
+        $maVaiTros = $this->vaiTros()
+            ->where('VaiTro.trang_thai', true)
+            ->pluck('VaiTro.ma_vai_tro');
+
+        if ($maVaiTros->isEmpty()) {
+            return 'self';
+        }
+
+        $phamVis = DB::table('VaiTroChucNang')
+            ->whereIn('ma_vai_tro', $maVaiTros)
+            ->where('ma_chuc_nang', $maChucNang)
+            ->where('duoc_thuc_hien', true)
+            ->pluck('ma_pham_vi')
+            ->toArray();
+
+        if (in_array('PV_HeThong', $phamVis, true) || in_array('PV_CongTy', $phamVis, true)) {
+            return 'all';
+        }
+
+        if (in_array('PV_PhongBan', $phamVis, true)) {
+            return 'department';
+        }
+
+        return 'self';
     }
 }

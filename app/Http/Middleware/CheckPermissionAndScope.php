@@ -5,11 +5,11 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Middleware xác thực phiên đăng nhập (401) và kiểm tra quyền thao tác + phạm vi dữ liệu (403).
- * Ánh xạ trực tiếp Phần B của biểu đồ UC-ROLE-01.
  */
 class CheckPermissionAndScope
 {
@@ -37,83 +37,45 @@ class CheckPermissionAndScope
         'cham-cong/kiem-tra-admin-faceid',
     ];
 
-    public function handle(Request $request, Closure $next, ?string $requiredPermission = null): Response
+    public function handle(Request $request, Closure $next, ?string $maChucNang = null): Response
     {
-        // Cho phép luồng máy chấm công công khai chạy mà không yêu cầu đăng nhập
         if ($this->isPublicChamCongRequest($request)) {
             return $next($request);
         }
 
-        // Bước 36-40: Trả về lỗi 401 nếu chưa đăng nhập
-        if (!Auth::check()) {
-            if ($request->expectsJson()) {
-                return response()->json(['message' => 'Mã lỗi 401: Chưa đăng nhập hoặc phiên không hợp lệ.'], 401);
-            }
-            return redirect()->route('login')
-                ->withErrors(['auth_error' => 'Phiên đăng nhập không hợp lệ (401). Vui lòng đăng nhập lại.']);
+        $user = Auth::user();
+        if (!$user) {
+            return redirect()->route('login');
         }
 
-        /** @var \App\Models\TaiKhoan $user */
-        $user = Auth::user();
+        // Chuẩn hóa kiểm tra trạng thái tài khoản & hồ sơ nhân viên
+        $trangThaiNV = mb_strtolower(trim((string) optional($user->nhanVien)->trang_thai_nhan_vien));
+        $blockedStatuses = [
+            'da nghi viec', 'đã nghỉ việc',
+            'nghi viec', 'nghỉ việc',
+            'tam khoa', 'tạm khóa',
+            'khoa', 'khóa',
+        ];
 
-        // SỬA LỖI 1: Lấy trạng thái từ bảng NhanVien thông qua relationship
-        $trangThaiNV = mb_strtolower(trim(optional($user->nhanVien)->trang_thai ?? ''));
-        if (in_array($trangThaiNV, ['nghi viec', 'nghỉ việc', 'khoa', 'khóa', 'locked', 'disabled'], true)) {
+        if (!(bool) $user->trang_thai || in_array($trangThaiNV, $blockedStatuses, true)) {
             Auth::logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
             return redirect()->route('login')
-                ->withErrors(['auth_error' => 'Tài khoản không được phép đăng nhập (Nhân viên đã nghỉ việc hoặc bị khóa).']);
+                ->withErrors(['login' => 'Tài khoản hoặc hồ sơ nhân sự đã ngừng hoạt động.']);
         }
 
-        // Kiểm tra quyền truy cập chức năng
-        if ($requiredPermission !== null) {
-            // ==========================================
-            // 1. LẤY DANH SÁCH VAI TRÒ VÀ CHỨC NĂNG
-            // ==========================================
-            $userRoles = session('user_roles', []);
-            $userPermissions = session('user_permissions', []);
-
-            $userRoles = is_array($userRoles) ? $userRoles : [];
-            $userPermissions = is_array($userPermissions) ? $userPermissions : [];
-
-            // ==========================================
-            // 2. KIỂM TRA TÀI KHOẢN CÓ VAI TRÒ HỢP LỆ
-            // ==========================================
-            $validRoles = [
-                'VT_Admin',
-                'VT_HR',
-                'VT_GiamDoc',
-                'VT_NhanVien',
-                'VT_TruongPhong',
-            ];
-
-            $hasValidRole = !empty(array_intersect($userRoles, $validRoles));
-
-            // ==========================================
-            // 3. KIỂM TRA QUYỀN CHỨC NĂNG
-            // ==========================================
-            $hasPermission = in_array(
-                $requiredPermission,
-                $userPermissions,
-                true
-            );
-
-            // ==========================================
-            // 4. KIỂM TRA QUYỀN TRUY CẬP
-            // ==========================================
-            if (!$hasValidRole || !$hasPermission) {
-                if ($request->expectsJson()) {
-                    return response()->json([
-                        'message' => 'Mã lỗi 403: Không đủ quyền truy cập tài nguyên.'
-                    ], 403);
-                }
-
-                return response()->view('errors.403', [
-                    'message' => 'Mã lỗi 403: Bạn không có quyền thực hiện thao tác hoặc truy cập chức năng này.'
-                ], 403);
+        if ($maChucNang !== null) {
+            if (!Gate::forUser($user)->allows($maChucNang)) {
+                abort(403, 'Bạn không có quyền truy cập chức năng này.');
             }
+
+            $dataScope = method_exists($user, 'getDataScope')
+                ? $user->getDataScope($maChucNang)
+                : 'self';
+
+            $request->attributes->set('data_scope', $dataScope);
         }
 
         return $next($request);

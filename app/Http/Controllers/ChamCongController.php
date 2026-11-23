@@ -8,7 +8,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class ChamCongController extends Controller
 {
@@ -29,88 +28,80 @@ class ChamCongController extends Controller
             return false;
         }
 
-        if (method_exists($taiKhoan, 'isAdmin') && $taiKhoan->isAdmin()) {
-            return true;
-        }
-
-        if (method_exists($taiKhoan, 'vaiTros')) {
-            $roles = $taiKhoan->vaiTros()->pluck('VaiTro.ma_vai_tro')->toArray();
-            return !empty(array_intersect($roles, ['VT_Admin', 'VT_HR']));
-        }
-
-        return false;
+        return $taiKhoan->hasRole(['VT_Admin', 'VT_HR']);
     }
 
     /**
      * Quét mặt xong -> kiểm tra ma_nhan_vien có thuộc tài khoản Admin hoặc HR không.
-     * Nếu đúng -> đăng nhập phiên cho tài khoản đó và trả về URL để bật nút sang trang đăng ký FaceID.
+     * Nếu đúng -> đăng nhập phiên cho tài khoản đó và trả về URL sang trang đăng ký FaceID.
      */
     public function verifyAdminByFace(Request $request)
     {
         $request->validate([
-            'ma_nhan_vien' => 'required|string|exists:NhanVien,ma_nhan_vien',
+            'ma_nhan_vien' => 'required|string',
         ]);
 
-        $maNhanVien = $request->input('ma_nhan_vien');
-        $taiKhoan = $this->findTaiKhoanByMaNhanVien($maNhanVien);
+        $taiKhoan = TaiKhoan::with(['vaiTros.chucNangs', 'nhanVien'])
+            ->where('ma_nhan_vien', $request->ma_nhan_vien)
+            ->where('trang_thai', true)
+            ->first();
 
-        if (!$this->canManageFaceId($taiKhoan)) {
-            return response()->json([
-                'success'  => true,
-                'is_admin' => false,
-                'message'  => 'Khuôn mặt này không thuộc tài khoản Admin hoặc HR.',
-            ]);
+        if (!$taiKhoan) {
+            return response()->json(['is_admin' => false]);
+        }
+
+        $trangThaiNV = mb_strtolower(trim((string) optional($taiKhoan->nhanVien)->trang_thai_nhan_vien));
+        if (in_array($trangThaiNV, ['đã nghỉ việc', 'da nghi viec', 'tạm khóa', 'tam khoa'], true)) {
+            return response()->json(['is_admin' => false]);
+        }
+
+        $activeRoles = $taiKhoan->vaiTros->where('trang_thai', true);
+        $roleKeys = $activeRoles->pluck('ma_vai_tro')->toArray();
+        $matchedRoles = array_values(array_intersect($roleKeys, ['VT_Admin', 'VT_HR']));
+
+        if (empty($matchedRoles)) {
+            return response()->json(['is_admin' => false]);
         }
 
         Auth::login($taiKhoan);
         $request->session()->regenerate();
-        $request->session()->put('last_activity_timestamp', time());
 
-        $roles = [];
-        if (method_exists($taiKhoan, 'vaiTros')) {
-            $roles = $taiKhoan->vaiTros()->pluck('VaiTro.ma_vai_tro')->toArray();
-            $request->session()->put('user_roles', $roles);
-        }
+        $userPermissions = $activeRoles
+            ->flatMap(fn ($vt) => $vt->chucNangs)
+            ->filter(fn ($cn) => $cn->trang_thai && $cn->pivot->duoc_thuc_hien)
+            ->pluck('ma_chuc_nang')
+            ->unique()
+            ->values()
+            ->toArray();
 
-        $roleLabel = in_array('VT_Admin', $roles, true) ? 'Admin' : 'HR';
+        $userScope = $activeRoles
+            ->flatMap(fn ($vt) => $vt->chucNangs)
+            ->filter(fn ($cn) => $cn->trang_thai && $cn->pivot->duoc_thuc_hien)
+            ->map(fn ($cn) => [
+                'ma_chuc_nang' => $cn->ma_chuc_nang,
+                'ma_pham_vi'   => $cn->pivot->ma_pham_vi,
+            ])
+            ->values()
+            ->toArray();
+
+        $request->session()->put([
+            'tai_khoan_id'            => $taiKhoan->id,
+            'ten_tai_khoan'           => $taiKhoan->ten_tai_khoan,
+            'ma_nhan_vien'            => $taiKhoan->ma_nhan_vien,
+            'ho_va_ten'               => optional($taiKhoan->nhanVien)->ho_va_ten,
+            'user_roles'              => $roleKeys,
+            'user_permissions'        => $userPermissions,
+            'user_scope'              => $userScope,
+            'last_activity_timestamp' => time(),
+        ]);
+
+        $roleLabel = in_array('VT_Admin', $matchedRoles, true) ? 'Admin' : 'HR';
 
         return response()->json([
-            'success'      => true,
             'is_admin'     => true,
             'role_label'   => $roleLabel,
-            'message'      => "Xác thực {$roleLabel} thành công!",
             'redirect_url' => route('chamcong.face.register.form'),
         ]);
-    }
-
-    /**
-     * Tìm TaiKhoan tương ứng với ma_nhan_vien
-     */
-    private function findTaiKhoanByMaNhanVien(string $maNhanVien): ?TaiKhoan
-    {
-        if (Schema::hasColumn('TaiKhoan', 'ma_nhan_vien')) {
-            $tk = TaiKhoan::where('ma_nhan_vien', $maNhanVien)->first();
-            if ($tk) {
-                return $tk;
-            }
-        }
-
-        $nhanVien = NhanVien::where('ma_nhan_vien', $maNhanVien)->first();
-        if (!$nhanVien) {
-            return null;
-        }
-
-        foreach (['id_tai_khoan', 'tai_khoan_id', 'user_id'] as $col) {
-            if (!empty($nhanVien->{$col})) {
-                return TaiKhoan::find($nhanVien->{$col});
-            }
-        }
-
-        if (method_exists($nhanVien, 'taiKhoan')) {
-            return $nhanVien->taiKhoan;
-        }
-
-        return null;
     }
 
     /**
@@ -140,7 +131,7 @@ class ChamCongController extends Controller
     }
 
     /**
-     * 3. Trả về danh sách Vector khuôn mặt để nạp vào JS
+     * 3. Trả về danh sách Vector khuôn mặt hợp lệ để nạp vào JS
      */
     public function getFaceDatabase()
     {
@@ -149,12 +140,19 @@ class ChamCongController extends Controller
                 ->select('ma_nhan_vien', 'ho_va_ten as ho_ten', 'face_vector')
                 ->get()
                 ->map(function ($emp) {
+                    $decoded = json_decode($emp->face_vector, true);
+                    if (!is_array($decoded) || empty($decoded)) {
+                        return null;
+                    }
+
                     return [
                         'ma_nhan_vien' => $emp->ma_nhan_vien,
                         'ho_ten'       => $emp->ho_ten,
-                        'face_vector'  => json_decode($emp->face_vector),
+                        'face_vector'  => $decoded,
                     ];
                 })
+                ->filter()
+                ->values()
         );
     }
 
@@ -177,12 +175,19 @@ class ChamCongController extends Controller
             'face_vector'  => 'required',
         ]);
 
-        $vectorJson = is_string($validated['face_vector'])
-            ? $validated['face_vector']
-            : json_encode($validated['face_vector']);
+        $decodedVector = is_string($validated['face_vector'])
+            ? json_decode($validated['face_vector'], true)
+            : $validated['face_vector'];
+
+        if (!is_array($decodedVector) || count($decodedVector) === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Dữ liệu vector khuôn mặt không hợp lệ!',
+            ], 422);
+        }
 
         NhanVien::where('ma_nhan_vien', $validated['ma_nhan_vien'])
-            ->update(['face_vector' => $vectorJson]);
+            ->update(['face_vector' => json_encode(array_values($decodedVector))]);
 
         return response()->json([
             'success' => true,
@@ -209,6 +214,14 @@ class ChamCongController extends Controller
                 'success' => false,
                 'message' => 'Không tìm thấy thông tin nhân viên!',
             ], 404);
+        }
+
+        $trangThaiNV = mb_strtolower(trim((string) ($nhanVien->trang_thai_nhan_vien ?? '')));
+        if (in_array($trangThaiNV, ['đã nghỉ việc', 'da nghi viec', 'tạm khóa', 'tam khoa'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nhân viên đang tạm khóa hoặc đã nghỉ việc, không thể chấm công!',
+            ], 403);
         }
 
         $today = Carbon::today('Asia/Ho_Chi_Minh');
@@ -263,7 +276,7 @@ class ChamCongController extends Controller
 
         return response()->json([
             'success'   => true,
-            'ho_ten'    => $nhanVien->ho_va_ten ?? $nhanVien->ho_ten ?? '',
+            'ho_ten'    => $nhanVien->ho_va_ten ?? '',
             'loai'      => $type,
             'thoi_gian' => $now->format('H:i:s d/m/Y'),
         ]);

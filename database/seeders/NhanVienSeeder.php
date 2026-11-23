@@ -110,10 +110,13 @@ class NhanVienSeeder extends Seeder
 
                 // Sinh thông tin cá nhân riêng cho từng nhân viên
                 $ho = $vaiTro['ho'];
-                $ten = $nhomData['prefix'] . ' '
-                    . $vaiTro['ten_dem'];
-
-                $hoVaTen = $ho . ' ' . $ten;
+                $ten = match ($nhomData['prefix']) {
+                    'hoang' => 'Hoàng',
+                    'hieu' => 'Hiếu',
+                    'khang' => 'Kháng',
+                    default => $vaiTro['ten_dem'],
+                };
+                $hoVaTen = trim($ho . ' ' . $ten);
 
                 $ngayVaoLam = '2024-01-01';
 

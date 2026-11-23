@@ -9,90 +9,48 @@ class VaiTroChucNangSeeder extends Seeder
 {
     public function run(): void
     {
-        // Lấy toàn bộ vai trò
-        $vaiTros = DB::table('vaitro')
-            ->pluck('ma_vai_tro');
+        $phanQuyens = [
+            // 1. Admin: Toàn quyền hệ thống
+            ['ma_vai_tro' => 'VT_Admin', 'ma_chuc_nang' => 'QT_001', 'ma_pham_vi' => 'PV_HeThong',  'duoc_thuc_hien' => true],
+            ['ma_vai_tro' => 'VT_Admin', 'ma_chuc_nang' => 'NS_012', 'ma_pham_vi' => 'PV_HeThong',  'duoc_thuc_hien' => true],
+            ['ma_vai_tro' => 'VT_Admin', 'ma_chuc_nang' => 'NS_013', 'ma_pham_vi' => 'PV_HeThong',  'duoc_thuc_hien' => true],
+            ['ma_vai_tro' => 'VT_Admin', 'ma_chuc_nang' => 'NS_014', 'ma_pham_vi' => 'PV_HeThong',  'duoc_thuc_hien' => true],
+            ['ma_vai_tro' => 'VT_Admin', 'ma_chuc_nang' => 'NS_015', 'ma_pham_vi' => 'PV_HeThong',  'duoc_thuc_hien' => true],
 
-        // Lấy toàn bộ chức năng
-        $chucNangs = DB::table('chucnang')
-            ->pluck('ma_chuc_nang');
+            // 2. HR: Quản lý nhân sự toàn công ty
+            ['ma_vai_tro' => 'VT_HR',    'ma_chuc_nang' => 'NS_012', 'ma_pham_vi' => 'PV_CongTy',   'duoc_thuc_hien' => true],
+            ['ma_vai_tro' => 'VT_HR',    'ma_chuc_nang' => 'NS_013', 'ma_pham_vi' => 'PV_CongTy',   'duoc_thuc_hien' => true],
+            ['ma_vai_tro' => 'VT_HR',    'ma_chuc_nang' => 'NS_014', 'ma_pham_vi' => 'PV_CongTy',   'duoc_thuc_hien' => true],
+            ['ma_vai_tro' => 'VT_HR',    'ma_chuc_nang' => 'NS_015', 'ma_pham_vi' => 'PV_CongTy',   'duoc_thuc_hien' => true],
 
-        // Lấy toàn bộ phạm vi
-        $phamVis = DB::table('phamviquyen')
-            ->pluck('ma_pham_vi');
+            // 3. Trưởng phòng: Xem nhân sự trong phòng ban của mình
+            ['ma_vai_tro' => 'VT_TruongPhong', 'ma_chuc_nang' => 'NS_012', 'ma_pham_vi' => 'PV_PhongBan', 'duoc_thuc_hien' => true],
+            ['ma_vai_tro' => 'VT_TruongPhong', 'ma_chuc_nang' => 'NS_015', 'ma_pham_vi' => 'PV_PhongBan', 'duoc_thuc_hien' => true],
 
-        // Danh sách quyền được thực hiện
-        $quyenDuocThucHien = [
-            'VT_Admin' => [
-                'NS_011' => 'PV_HeThong',
-                'NS_014' => 'PV_HeThong',
-                'NS_018' => 'PV_HeThong',
-            ],
-
-            'VT_GiamDoc' => [
-                'NS_012' => 'PV_CongTy',
-                'NS_013' => 'PV_CongTy',
-                'NS_015' => 'PV_CongTy',
-                'NS_016' => 'PV_CongTy',
-                'NS_017' => 'PV_CongTy',
-            ],
-
-            'VT_HR' => [
-                'NS_011' => 'PV_CongTy',
-                'NS_012' => 'PV_CongTy',
-                'NS_013' => 'PV_CongTy',
-                'NS_014' => 'PV_CongTy',
-                'NS_015' => 'PV_CongTy',
-                'NS_016' => 'PV_CongTy',
-                'NS_017' => 'PV_CongTy',
-            ],
-
-            'VT_TruongPhong' => [
-                'NS_012' => 'PV_PhongBan',
-                'NS_013' => 'PV_PhongBan',
-                'NS_015' => 'PV_CongTy',
-                'NS_016' => 'PV_PhongBan',
-                'NS_017' => 'PV_PhongBan',
-            ],
-
-            'VT_NhanVien' => [
-                'NS_012' => 'PV_CaNhan',
-                'NS_013' => 'PV_CaNhan',
-            ],
+            // 4. Nhân viên: Chỉ xem hồ sơ cá nhân
+            ['ma_vai_tro' => 'VT_NhanVien', 'ma_chuc_nang' => 'NS_012', 'ma_pham_vi' => 'PV_CaNhan', 'duoc_thuc_hien' => true],
+            
         ];
 
-        // Duyệt tất cả vai trò
-        foreach ($vaiTros as $vaiTro) {
+        foreach ($phanQuyens as $pq) {
+            // Xóa bản ghi phạm vi cũ khác với phạm vi chuẩn để tránh trùng khóa duy nhất 3 cột
+            DB::table('VaiTroChucNang')
+                ->where('ma_vai_tro', $pq['ma_vai_tro'])
+                ->where('ma_chuc_nang', $pq['ma_chuc_nang'])
+                ->where('ma_pham_vi', '!=', $pq['ma_pham_vi'])
+                ->delete();
 
-            // Duyệt tất cả chức năng
-            foreach ($chucNangs as $chucNang) {
-
-                // Duyệt tất cả phạm vi
-                foreach ($phamVis as $phamVi) {
-
-                    // Mặc định không được thực hiện
-                    $duocThucHien = false;
-
-                    // Kiểm tra vai trò có được cấp quyền không
-                    if (
-                        isset($quyenDuocThucHien[$vaiTro][$chucNang])
-                        && $quyenDuocThucHien[$vaiTro][$chucNang] === $phamVi
-                    ) {
-                        $duocThucHien = true;
-                    }
-
-                    DB::table('vaitrochucnang')->updateOrInsert(
-                        [
-                            'ma_vai_tro' => $vaiTro,
-                            'ma_chuc_nang' => $chucNang,
-                            'ma_pham_vi' => $phamVi,
-                        ],
-                        [
-                            'duoc_thuc_hien' => $duocThucHien,
-                        ]
-                    );
-                }
-            }
+            // Cập nhật hoặc thêm mới theo đúng 3 cột của uq_vai_tro_chuc_nang_pham_vi
+            DB::table('VaiTroChucNang')->updateOrInsert(
+                [
+                    'ma_vai_tro'   => $pq['ma_vai_tro'],
+                    'ma_chuc_nang' => $pq['ma_chuc_nang'],
+                    'ma_pham_vi'   => $pq['ma_pham_vi'],
+                ],
+                [
+                    'duoc_thuc_hien' => $pq['duoc_thuc_hien'],
+                ]
+            );
         }
     }
 }

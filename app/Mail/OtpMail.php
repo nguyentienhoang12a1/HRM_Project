@@ -21,7 +21,7 @@ class OtpMail extends Mailable
     public function __construct(string $otpCode, string $employeeName)
     {
         $this->otpCode = $otpCode;
-        $this->employeeName = $employeeName;
+        $this->employeeName = trim(preg_replace('/\s+/', ' ', $employeeName) ?: 'Nhân viên');
     }
 
     public function envelope(): Envelope
